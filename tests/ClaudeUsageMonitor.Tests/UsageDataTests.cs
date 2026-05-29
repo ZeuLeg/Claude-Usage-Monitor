@@ -89,3 +89,12 @@ public class UsageDataTests
         Assert.False(result.WeeklyStale);
     }
 }
+
+public class Win32InteropTests
+{
+    [Fact]
+    public void WS_EX_TOPMOST_HasCorrectValue()
+    {
+        Assert.Equal(0x00000008u, Win32Interop.WS_EX_TOPMOST);
+    }
+}

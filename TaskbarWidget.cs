@@ -5,26 +5,26 @@ using System.Drawing.Imaging;
 namespace ClaudeUsageMonitor;
 
 /// <summary>
-/// A widget embedded directly in the Windows taskbar (next to the system tray).
-/// Uses Win32 reparenting (WS_CHILD + SetParent) and UpdateLayeredWindow for
-/// per-pixel alpha rendering. Falls back gracefully if embedding fails.
+/// A floating topmost overlay widget positioned just above the system tray.
+/// Uses UpdateLayeredWindow for per-pixel alpha rendering with hover-fade.
 /// </summary>
 internal sealed class TaskbarWidget : IDisposable
 {
     // ── Layout constants ────────────────────────────────────────────────────
     private const int WidgetW     = 290;
     private const int WidgetH     = 46;
-    private const int PadL        = 6;   // left padding
-    private const int LabelW      = 20;  // "5h" / "7d" text width
+    private const int AccentW     = 3;   // left-edge colored status strip
+    private const int PadL        = 8;   // was 6
+    private const int LabelW      = 20;
     private const int LabelBarGap = 4;
-    private const int BarW        = 152; // solid bar width
-    private const int BarH        = 13;  // solid bar height
+    private const int BarW        = 136; // was 152; extra width prevents text clipping
+    private const int BarH        = 13;
     private const int BarTextGap  = 5;
     private const int PadR        = 4;
-    // TextW = 290 - 6 - 20 - 4 - 152 - 5 - 4 = 99
+    // TextW = 290 − 8 − 20 − 4 − 136 − 5 − 4 = 113
     private const int TextW       = WidgetW - PadL - LabelW - LabelBarGap - BarW - BarTextGap - PadR;
-    private const int Row1Y       = 6;   // top y of row-1 bar (session)
-    private const int Row2Y       = 27;  // top y of row-2 bar (weekly)
+    private const int Row1Y       = 6;
+    private const int Row2Y       = 27;
     private const int BarRadius   = 2;
 
     // ── Colors ──────────────────────────────────────────────────────────────
@@ -42,8 +42,6 @@ internal sealed class TaskbarWidget : IDisposable
     private readonly System.Windows.Forms.Timer _timer;
     private UsageData? _data;
 
-    public bool IsEmbedded => _nw.Embedded;
-
     public ContextMenuStrip? ContextMenu
     {
         get => _nw.ContextMenu;
@@ -54,7 +52,7 @@ internal sealed class TaskbarWidget : IDisposable
 
     public TaskbarWidget(UsageData? initialData = null)
     {
-        _nw = new WidgetNativeWindow(WidgetW, WidgetH);
+        _nw = new WidgetNativeWindow(Redraw);
 
         _timer = new System.Windows.Forms.Timer();
         _timer.Tick += (_, _) => Redraw();
@@ -75,23 +73,21 @@ internal sealed class TaskbarWidget : IDisposable
 
     /// <summary>
     /// Called when the TaskbarCreated message is received (Explorer restarted).
-    /// Recreates the window and re-embeds it in the new taskbar.
     /// </summary>
     public void Reattach()
     {
-        _nw.Reattach();
-        if (_nw.Embedded)
-            Redraw();
+        _nw.Reposition();
+        Redraw();
     }
 
     /// <summary>
     /// Called on resume from standby. Re-runs position math so the widget
-    /// doesn't drift over the "show hidden icons" arrow after the taskbar relays out.
+    /// doesn't drift after the taskbar relays out.
     /// </summary>
     public void Reposition()
     {
-        if (_nw.RepositionInTaskbar())
-            Redraw();
+        _nw.Reposition();
+        Redraw();
     }
 
     public void Dispose()
@@ -104,8 +100,6 @@ internal sealed class TaskbarWidget : IDisposable
 
     private void Redraw()
     {
-        if (!_nw.Embedded) return;
-        if (!_nw.RepositionInTaskbar()) return; // hidden due to no taskbar room
         _nw.Paint(Win32Interop.IsLightMode(), _data);
         ScheduleNextRedraw();
     }
@@ -355,99 +349,89 @@ internal sealed class TaskbarWidget : IDisposable
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    // WidgetNativeWindow — low-level Win32 window that embeds in the taskbar
+    // WidgetNativeWindow — floating topmost layered window above the taskbar
     // ════════════════════════════════════════════════════════════════════════
 
     private sealed class WidgetNativeWindow : NativeWindow, IDisposable
     {
-        private const int WM_RBUTTONUP  = 0x0205;
-        private const int MinGapToShow  = 100; // hide when taskbar gap < this
-        private const int FullWidgetW   = WidgetW;
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_RBUTTONUP = 0x0205;
 
-        private int          _w;
-        private readonly int _h;
-        public bool Embedded { get; private set; }
+        private int _alpha       = 200;
+        private int _targetAlpha = 200;
+
+        private readonly System.Windows.Forms.Timer _fadeTimer;
+        private readonly Action _repaint;
+
         public ContextMenuStrip? ContextMenu { get; set; }
+        public int CurrentAlpha => _alpha;
 
-        public WidgetNativeWindow(int w, int h)
+        internal WidgetNativeWindow(Action repaint)
         {
-            _w = w; _h = h;
+            _repaint = repaint;
 
+            _fadeTimer = new System.Windows.Forms.Timer { Interval = 40 };
+            _fadeTimer.Tick += OnFadeTick;
+
+            var (x, y) = ComputePosition();
             var cp = new CreateParams
             {
-                // Start as POPUP (top-level); will be changed to CHILD after creation
-                Style   = unchecked((int)(Win32Interop.WS_POPUP | Win32Interop.WS_VISIBLE)),
-                ExStyle = unchecked((int)(Win32Interop.WS_EX_TOOLWINDOW
-                                        | Win32Interop.WS_EX_LAYERED
-                                        | Win32Interop.WS_EX_NOACTIVATE)),
-                Width   = w,
-                Height  = h,
-                X       = -2000, // off-screen until embedded
-                Y       = -2000,
+                Width   = WidgetW,
+                Height  = WidgetH,
+                X       = x,
+                Y       = y,
                 Caption = "",
+                Style   = unchecked((int)(Win32Interop.WS_POPUP | Win32Interop.WS_VISIBLE)),
+                ExStyle = unchecked((int)(Win32Interop.WS_EX_LAYERED
+                                        | Win32Interop.WS_EX_TOPMOST
+                                        | Win32Interop.WS_EX_NOACTIVATE
+                                        | Win32Interop.WS_EX_TOOLWINDOW)),
             };
-
-            try
-            {
-                CreateHandle(cp);
-                Embedded = TryEmbedInTaskbar();
-            }
-            catch
-            {
-                Embedded = false;
-            }
+            CreateHandle(cp);
+            _fadeTimer.Start();
         }
 
-        private bool TryEmbedInTaskbar()
+        internal static (int x, int y) ComputePosition()
         {
-            if (Handle == IntPtr.Zero) return false;
+            IntPtr shell  = Win32Interop.FindWindowW("Shell_TrayWnd", null);
+            IntPtr notify = Win32Interop.FindWindowExW(shell, IntPtr.Zero, "TrayNotifyWnd", null);
+            Win32Interop.GetWindowRect(shell,  out var taskbar);
+            Win32Interop.GetWindowRect(notify, out var tray);
+            int x = Math.Max(0, tray.Right - WidgetW);
+            int y = taskbar.Top - WidgetH;
+            return (x, y);
+        }
 
-            // Find the main taskbar and the tray notification area
-            var taskbar = Win32Interop.FindWindowW("Shell_TrayWnd", null);
-            if (taskbar == IntPtr.Zero) return false;
+        internal void Reposition()
+        {
+            if (Handle == IntPtr.Zero) return;
+            var (x, y) = ComputePosition();
+            Win32Interop.MoveWindow(Handle, x, y, WidgetW, WidgetH, false);
+        }
 
-            var trayNotify = Win32Interop.FindWindowExW(taskbar, IntPtr.Zero, "TrayNotifyWnd", null);
-            if (trayNotify == IntPtr.Zero) return false;
+        private void OnFadeTick(object? sender, EventArgs e)
+        {
+            const int step = 20; // 200/20 = 10 ticks × 40ms = ~400ms fade
 
-            if (!Win32Interop.GetWindowRect(trayNotify, out var trayRect) ||
-                !Win32Interop.GetWindowRect(taskbar,    out var taskbarRect))
-                return false;
+            if (_alpha < _targetAlpha)      _alpha = Math.Min(_targetAlpha, _alpha + step);
+            else if (_alpha > _targetAlpha) _alpha = Math.Max(_targetAlpha, _alpha - step);
 
-            // Rewrite window style: POPUP → CHILD | CLIPSIBLINGS
-            var style = Win32Interop.GetWindowLong(Handle, Win32Interop.GWL_STYLE);
-            style = (style & ~unchecked((int)Win32Interop.WS_POPUP))
-                  | unchecked((int)(Win32Interop.WS_CHILD | Win32Interop.WS_CLIPSIBLINGS));
-            Win32Interop.SetWindowLong(Handle, Win32Interop.GWL_STYLE, style);
-
-            // Reparent into the taskbar
-            var result = Win32Interop.SetParent(Handle, taskbar);
-            if (result == IntPtr.Zero) return false;
-
-            // Position: left of tray area, vertically centered in taskbar.
-            // Use available gap to decide width; hide if there is no room.
-            int taskbarH = taskbarRect.Height;
-            int gap      = trayRect.Left - taskbarRect.Left;
-
-            if (gap < MinGapToShow)
+            // When fully faded: poll cursor; restore when mouse leaves our area
+            if (_alpha == 0 && Handle != IntPtr.Zero)
             {
-                Win32Interop.ShowWindow(Handle, Win32Interop.SW_HIDE);
-                return true; // successfully embedded, but hidden
+                Win32Interop.GetCursorPos(out var pt);
+                Win32Interop.GetWindowRect(Handle, out var wr);
+                bool inside = pt.X >= wr.Left && pt.X <= wr.Right
+                           && pt.Y >= wr.Top  && pt.Y <= wr.Bottom;
+                if (!inside) _targetAlpha = 200;
             }
 
-            _w = Math.Min(gap - 4, FullWidgetW);
-            int x = trayRect.Left - taskbarRect.Left - _w;
-            int y = (taskbarH - _h) / 2;
-
-            Win32Interop.MoveWindow(Handle, x, y, _w, _h, true);
-            Win32Interop.ShowWindow(Handle, Win32Interop.SW_SHOWNOACTIVATE);
-
-            return true;
+            _repaint();
         }
 
         /// <summary>
-        /// Renders the widget content via UpdateLayeredWindow.
-        /// Creates a 32-bit top-down DIB section, draws with GDI+ directly into it,
-        /// then hands the result to the window manager for compositing.
+        /// Renders widget content via UpdateLayeredWindow.
+        /// SourceConstantAlpha drives the hover-fade effect; alpha=0 is naturally click-through.
         /// </summary>
         public void Paint(bool lightMode, UsageData? data)
         {
@@ -456,11 +440,11 @@ internal sealed class TaskbarWidget : IDisposable
             var bmiHeader = new Win32Interop.BITMAPINFOHEADER
             {
                 biSize        = System.Runtime.InteropServices.Marshal.SizeOf<Win32Interop.BITMAPINFOHEADER>(),
-                biWidth       = _w,
-                biHeight      = -_h,  // negative = top-down scan order
+                biWidth       = WidgetW,
+                biHeight      = -WidgetH,
                 biPlanes      = 1,
                 biBitCount    = 32,
-                biCompression = 0,    // BI_RGB
+                biCompression = 0,
             };
 
             var hdcScreen = Win32Interop.GetDC(IntPtr.Zero);
@@ -482,20 +466,17 @@ internal sealed class TaskbarWidget : IDisposable
 
             try
             {
-                // GDI+ draws directly into the DIB section memory pointed to by pBits.
-                // stride = _w * 4 (32-bit ARGB, top-down)
-                using (var bmp = new Bitmap(_w, _h, _w * 4, PixelFormat.Format32bppArgb, pBits))
+                using (var bmp = new Bitmap(WidgetW, WidgetH, WidgetW * 4, PixelFormat.Format32bppArgb, pBits))
                 using (var gfx = Graphics.FromImage(bmp))
                 {
-                    TaskbarWidget.Render(gfx, _w, _h, lightMode, data);
+                    TaskbarWidget.Render(gfx, WidgetW, WidgetH, lightMode, data);
                 }
 
-                // UpdateLayeredWindow with AC_SRC_ALPHA requires premultiplied ARGB.
-                // GDI+ writes straight ARGB, so premultiply each non-trivial pixel in-place.
+                // Premultiply straight ARGB → premultiplied ARGB for UpdateLayeredWindow
                 unsafe
                 {
                     byte* p = (byte*)pBits;
-                    int total = _w * _h * 4;
+                    int total = WidgetW * WidgetH * 4;
                     for (int i = 0; i < total; i += 4)
                     {
                         byte a = p[i + 3];
@@ -506,18 +487,16 @@ internal sealed class TaskbarWidget : IDisposable
                     }
                 }
 
-                // GDI+ objects are disposed above — safe to call UpdateLayeredWindow now.
                 var blend = new Win32Interop.BLENDFUNCTION
                 {
-                    BlendOp              = Win32Interop.AC_SRC_OVER,
-                    BlendFlags           = 0,
-                    SourceConstantAlpha  = 255,
-                    AlphaFormat          = Win32Interop.AC_SRC_ALPHA,
+                    BlendOp             = Win32Interop.AC_SRC_OVER,
+                    BlendFlags          = 0,
+                    SourceConstantAlpha = (byte)_alpha,  // drives hover-fade
+                    AlphaFormat         = Win32Interop.AC_SRC_ALPHA,
                 };
                 var ptSrc = new Win32Interop.POINT { X = 0, Y = 0 };
-                var sz    = new Win32Interop.SIZE   { cx = _w, cy = _h };
+                var sz    = new Win32Interop.SIZE  { cx = WidgetW, cy = WidgetH };
 
-                // IntPtr.Zero for pptDst: keep the position managed by MoveWindow
                 Win32Interop.UpdateLayeredWindow(
                     Handle, hdcScreen, IntPtr.Zero, ref sz,
                     hdcMem, ref ptSrc, 0, ref blend, Win32Interop.ULW_ALPHA);
@@ -531,97 +510,29 @@ internal sealed class TaskbarWidget : IDisposable
             }
         }
 
-        /// <summary>
-        /// Re-runs the position calculation and moves the window to match the
-        /// current taskbar layout. Used on resume from standby.
-        /// Returns true if the window was successfully repositioned.
-        /// </summary>
-        // Returns true if visible (caller should paint), false if hidden or failed.
-        public bool RepositionInTaskbar()
-        {
-            if (Handle == IntPtr.Zero || !Embedded) return false;
-
-            var taskbar = Win32Interop.FindWindowW("Shell_TrayWnd", null);
-            if (taskbar == IntPtr.Zero) return false;
-
-            var trayNotify = Win32Interop.FindWindowExW(taskbar, IntPtr.Zero, "TrayNotifyWnd", null);
-            if (trayNotify == IntPtr.Zero) return false;
-
-            if (!Win32Interop.GetWindowRect(trayNotify, out var trayRect) ||
-                !Win32Interop.GetWindowRect(taskbar,    out var taskbarRect))
-                return false;
-
-            int gap = trayRect.Left - taskbarRect.Left;
-
-            if (gap < MinGapToShow)
-            {
-                Win32Interop.ShowWindow(Handle, Win32Interop.SW_HIDE);
-                return false;
-            }
-
-            _w = Math.Min(gap - 4, FullWidgetW);
-            int x = trayRect.Left - taskbarRect.Left - _w;
-            int y = (taskbarRect.Height - _h) / 2;
-            Win32Interop.MoveWindow(Handle, x, y, _w, _h, true);
-            Win32Interop.ShowWindow(Handle, Win32Interop.SW_SHOWNOACTIVATE);
-            return true;
-        }
-
-        /// <summary>
-        /// Re-embeds the widget after Explorer restarts (TaskbarCreated message).
-        /// The old child window was destroyed with Shell_TrayWnd, so we release the
-        /// stale handle reference and create a fresh window before re-embedding.
-        /// </summary>
-        public void Reattach()
-        {
-            Embedded = false;
-            if (Handle != IntPtr.Zero)
-                ReleaseHandle(); // don't call DestroyWindow on an already-destroyed handle
-
-            var cp = new CreateParams
-            {
-                Style   = unchecked((int)(Win32Interop.WS_POPUP | Win32Interop.WS_VISIBLE)),
-                ExStyle = unchecked((int)(Win32Interop.WS_EX_TOOLWINDOW
-                                        | Win32Interop.WS_EX_LAYERED
-                                        | Win32Interop.WS_EX_NOACTIVATE)),
-                Width   = _w,
-                Height  = _h,
-                X       = -2000,
-                Y       = -2000,
-                Caption = "",
-            };
-
-            try
-            {
-                CreateHandle(cp);
-                Embedded = TryEmbedInTaskbar();
-            }
-            catch
-            {
-                Embedded = false;
-            }
-        }
-
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_RBUTTONUP && ContextMenu != null)
+            switch (m.Msg)
             {
-                var lp = m.LParam.ToInt32();
-                var pt = new Win32Interop.POINT
-                {
-                    X = (short)(lp & 0xFFFF),
-                    Y = (short)((lp >> 16) & 0xFFFF),
-                };
-                Win32Interop.ClientToScreen(Handle, ref pt);
-                ContextMenu.Show(pt.X, pt.Y);
+                case WM_MOUSEMOVE:
+                    _targetAlpha = 0;
+                    return;
+                case WM_RBUTTONUP:
+                    if (ContextMenu != null)
+                    {
+                        Win32Interop.GetCursorPos(out var pt);
+                        ContextMenu.Show(pt.X, pt.Y);
+                    }
+                    return;
             }
             base.WndProc(ref m);
         }
 
         public void Dispose()
         {
-            if (Handle != IntPtr.Zero)
-                DestroyHandle();
+            _fadeTimer.Stop();
+            _fadeTimer.Dispose();
+            if (Handle != IntPtr.Zero) DestroyHandle();
         }
     }
 }
