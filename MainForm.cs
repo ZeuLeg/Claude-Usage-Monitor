@@ -137,12 +137,10 @@ public sealed class MainForm : Form
             _backoffMs = PollIntervalMs;
             _pollTimer.Interval = PollIntervalMs;
 
-            var pct = data.SessionPercent;
-            var color = pct >= 90 ? CCrit : pct >= 75 ? CWarn : COk;
             ScheduleResetPoll(data);
             if (InvokeRequired)
-                BeginInvoke(new Action(() => { SetIcon($"{pct:0}%", color, data.TooltipText); RefreshWidget(); _taskbarWidget?.Update(data); }));
-            else { SetIcon($"{pct:0}%", color, data.TooltipText); RefreshWidget(); _taskbarWidget?.Update(data); }
+                BeginInvoke(new Action(() => { SetIconVisual(data); RefreshWidget(); _taskbarWidget?.Update(data); }));
+            else { SetIconVisual(data); RefreshWidget(); _taskbarWidget?.Update(data); }
         }
         catch (OperationCanceledException) { }
         catch (UnauthorizedAccessException)
@@ -527,6 +525,46 @@ public sealed class MainForm : Form
         return (Icon.FromHandle(hicon), hicon);
     }
 
+    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data)
+    {
+        const int sz = 32;
+        using var bmp = new Bitmap(sz, sz);
+        using var g   = Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.Clear(Color.Transparent);
+
+        using (var bg = new SolidBrush(Color.FromArgb(220, 22, 22, 30)))
+            g.FillEllipse(bg, 1, 1, sz - 2, sz - 2);
+
+        // Dim track rings
+        using (var tp = new Pen(Color.FromArgb(50, 200, 200, 200), 3.5f))
+            g.DrawEllipse(tp, 4, 4, sz - 8, sz - 8);
+        if (data.HasWeekly)
+            using (var twp = new Pen(Color.FromArgb(40, 200, 200, 200), 2.5f))
+                g.DrawEllipse(twp, 9, 9, sz - 18, sz - 18);
+
+        // Session arc (outer)
+        if (data.SessionPercent > 0)
+        {
+            var sc = data.SessionPercent >= 90 ? CCrit : data.SessionPercent >= 75 ? CWarn : COk;
+            using var sp = new Pen(Color.FromArgb(235, sc), 3.5f);
+            g.DrawArc(sp, 4, 4, sz - 8, sz - 8,
+                      -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
+        }
+
+        // Weekly arc (inner)
+        if (data.HasWeekly && data.WeeklyPercent > 0)
+        {
+            var wc = data.WeeklyPercent >= 90 ? CCrit : data.WeeklyPercent >= 75 ? CWarn : COk;
+            using var wp = new Pen(Color.FromArgb(210, wc), 2.5f);
+            g.DrawArc(wp, 9, 9, sz - 18, sz - 18,
+                      -90f, (float)(Math.Min(data.WeeklyPercent, 100) / 100.0 * 360.0));
+        }
+
+        var hicon = bmp.GetHicon();
+        return (Icon.FromHandle(hicon), hicon);
+    }
+
     private void SetIcon(string text, Color color, string tooltip)
     {
         if (InvokeRequired) { BeginInvoke(() => SetIcon(text, color, tooltip)); return; }
@@ -536,6 +574,19 @@ public sealed class MainForm : Form
         _trayIcon.Icon = newIcon;
         _trayIconHandle = newHandle;
         _trayIcon.Text = TruncateTooltip(tooltip);
+        old?.Dispose();
+        if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
+    }
+
+    private void SetIconVisual(UsageData data)
+    {
+        if (InvokeRequired) { BeginInvoke(() => SetIconVisual(data)); return; }
+        var old       = _trayIcon.Icon;
+        var oldHandle = _trayIconHandle;
+        var (newIcon, newHandle) = MakeIconVisual(data);
+        _trayIcon.Icon      = newIcon;
+        _trayIconHandle     = newHandle;
+        _trayIcon.Text      = TruncateTooltip(data.TooltipText);
         old?.Dispose();
         if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
     }
