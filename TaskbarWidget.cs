@@ -166,8 +166,8 @@ internal sealed class TaskbarWidget : IDisposable
         g.SmoothingMode      = SmoothingMode.AntiAlias;
         g.TextRenderingHint  = TextRenderingHint.ClearTypeGridFit;
 
-        // Background: nearly invisible in dark mode (hit-testable); soft plate in light mode.
-        int bgAlpha = light ? 220 : 1;
+        // Background: semi-transparent in dark mode; soft plate in light mode.
+        int bgAlpha = light ? 220 : 180;
         using var bgPath  = RoundedRect(new RectangleF(0, 0, w - 1, h - 1), 4);
         using (var bgBrush = new SolidBrush(Color.FromArgb(bgAlpha, BgColor(light))))
             g.FillPath(bgBrush, bgPath);
@@ -181,6 +181,16 @@ internal sealed class TaskbarWidget : IDisposable
         var textClr  = TextColor(light);
         var trackClr = TrackColor(light);
 
+        // Left accent strip: top = session urgency, bottom = weekly urgency
+        if (data != null)
+        {
+            using (var sa = new SolidBrush(FillColor(data.SessionPercent)))
+                g.FillRectangle(sa, 0, Row1Y - 1, AccentW, BarH + 2);
+            if (data.HasWeekly)
+                using (var wa = new SolidBrush(FillColor(data.WeeklyPercent)))
+                    g.FillRectangle(wa, 0, Row2Y - 1, AccentW, BarH + 2);
+        }
+
         if (data == null)
         {
             using var fb = new SolidBrush(textClr);
@@ -189,32 +199,28 @@ internal sealed class TaskbarWidget : IDisposable
             return;
         }
 
-        bool compact = w < WidgetW;
-        // In compact mode the bar fills available space; pct text replaces the countdown+glyph.
-        // barW = w - PadL - LabelW - LabelBarGap - BarTextGap - pctTextW - PadR
-        //      = w - 6   - 20    - 4           - 5          - 26       - 4     = w - 65
-        int effectiveBarW = compact ? Math.Max(w - 65, 10) : BarW;
+        int effectiveBarW = BarW;
 
         DrawRow(g, Row1Y, "5h", data.SessionPercent, data.SessionResetIn, data.SessionPaceState,
-                textClr, trackClr, effectiveBarW, compact);
+                textClr, trackClr, effectiveBarW);
 
         if (data.HasWeekly)
             DrawRow(g, Row2Y, "7d", data.WeeklyPercent, data.WeeklyResetIn, data.WeeklyPaceState,
-                    textClr, trackClr, effectiveBarW, compact);
+                    textClr, trackClr, effectiveBarW);
         else
             DrawRow(g, Row2Y, "7d", -1, TimeSpan.Zero, PaceState.OnPace,
-                    textClr, trackClr, effectiveBarW, compact);
+                    textClr, trackClr, effectiveBarW);
     }
 
     private static void DrawRow(Graphics g, int rowY, string label,
                                 double pct, TimeSpan resetIn, PaceState pace,
-                                Color textClr, Color trackClr, int barW, bool compact)
+                                Color textClr, Color trackClr, int barW)
     {
         int contentX = PadL;
 
         // Label ("5h" / "7d")
         using var labelFont = new Font("Segoe UI", 7.5f, FontStyle.Bold);
-        using var labelBrush = new SolidBrush(pct >= 0 ? textClr : Color.FromArgb(60, textClr));
+        using var labelBrush = new SolidBrush(pct >= 0 ? FillColor(pct) : Color.FromArgb(60, textClr));
         using var centerFmt = new StringFormat
         {
             Alignment     = StringAlignment.Near,
@@ -230,27 +236,27 @@ internal sealed class TaskbarWidget : IDisposable
             DrawSolidBar(g, barX, rowY, pct, trackClr, barW);
 
             int textX = barX + barW + BarTextGap;
-            if (compact)
-            {
-                // Compact: only "NN%" — no countdown or pace glyph
-                using var textFont  = new Font("Segoe UI", 8f);
-                using var textBrush = new SolidBrush(textClr);
-                g.DrawString($"{pct:0}%", textFont, textBrush,
-                             new RectangleF(textX, rowY, 28, BarH), centerFmt);
-            }
-            else
-            {
-                // Full: "42% - 2h 14m" + pace glyph
-                string txt = $"{pct:0}% - {FormatSpanShort(resetIn)}";
-                using var textFont  = new Font("Segoe UI", 8f);
-                using var textBrush = new SolidBrush(textClr);
-                g.DrawString(txt, textFont, textBrush,
-                             new RectangleF(textX, rowY, TextW - 20, BarH), centerFmt);
 
-                int glyphX  = textX + TextW - 12;
-                int glyphCY = rowY + BarH / 2;
-                DrawPaceGlyph(g, glyphX, glyphCY, pace);
-            }
+            string pctStr  = $"{pct:0}%";
+            string timeStr = $" {FormatSpanShort(resetIn)}";
+
+            using var boldFont  = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+            using var timeFont  = new Font("Segoe UI", 7.5f);
+            using var pctBrush  = new SolidBrush(FillColor(pct));
+            using var timeBrush = new SolidBrush(Color.FromArgb(150, textClr));
+
+            var centerFmt2 = new StringFormat { Alignment = StringAlignment.Near,
+                                                LineAlignment = StringAlignment.Center };
+            int pctW = (int)g.MeasureString(pctStr, boldFont).Width + 1;
+
+            g.DrawString(pctStr, boldFont, pctBrush,
+                         new RectangleF(textX, rowY, pctW, BarH), centerFmt2);
+            g.DrawString(timeStr, timeFont, timeBrush,
+                         new RectangleF(textX + pctW, rowY, TextW - 20 - pctW, BarH), centerFmt2);
+
+            int glyphX  = textX + TextW - 12;
+            int glyphCY = rowY + BarH / 2;
+            DrawPaceGlyph(g, glyphX, glyphCY, pace);
         }
         else
         {
