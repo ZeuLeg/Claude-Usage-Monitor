@@ -5,7 +5,7 @@ namespace ClaudeUsageMonitor;
 
 internal static class UpdateChecker
 {
-    private const string Repo        = "ZeuLeg/Tray-Usage-Monitor";
+    private const string Repo        = "ZeuLeg/Claude-Usage-Monitor";
     private const string ApiUrl      = $"https://api.github.com/repos/{Repo}/releases/latest";
     public  const string ReleasesUrl = $"https://github.com/{Repo}/releases";
 

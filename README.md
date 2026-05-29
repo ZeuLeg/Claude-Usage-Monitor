@@ -1,6 +1,6 @@
 ## Claude Usage Monitor - Taskbar Widget + Popup Window 
 
-A Windows tray app that shows your Claude.ai usage at a glance - including a widget embedded directly in the taskbar. 
+A Windows tray app that shows your Claude.ai usage at a glance - including a widget floating just above the system tray. 
 
 <img width="696" height="56" alt="image" src="https://github.com/user-attachments/assets/58a821ee-bb92-45d5-866c-9f85470c1f11" />
 
@@ -10,7 +10,7 @@ The app reads the OAuth token that **Claude Code** stores in your Windows Creden
 
 ## Requirements:
 You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and logged in (`claude login`) 
-and .NET 8 - zero external dependencies. 
+and .NET 10 - zero external dependencies. 
 
 ## Setup
 
@@ -19,8 +19,8 @@ Use the `ClaudeUsageMonitor.exe` from the latest release
 Or build it yourself: 
 
 ```bash
-git clone https://github.com/ZeuLeg/Tray-Usage-Monitor.git
-cd Tray-Usage-Monitor
+git clone https://github.com/ZeuLeg/Claude-Usage-Monitor.git
+cd Claude-Usage-Monitor
 dotnet build -c Release
 dotnet run
 ```
@@ -29,7 +29,7 @@ That's it. If you're logged into Claude Code, the tray icon should show your ses
 
 ## What you see
 
-- **Taskbar widget** — embedded next to the system tray, always visible. Shows two progress bars (`5h` session + `7d` weekly) with percentage, countdown (e.g. `91% - 2h 3m`), and a pace arrow (▲ ahead / ▼ under / • on pace). Bars have tick marks at 25%/50%/75% for reference. Colors shift green → yellow → red by utilization. Adapts to Windows light and dark themes. Updates automatically when the displayed countdown changes.
+- **Taskbar widget** — floating just above the system tray, always on top. Shows two progress bars (`5h` session + `7d` weekly) with percentage, countdown (e.g. `91% - 2h 3m`), and a pace arrow (▲ ahead / ▼ under / • on pace). Bars have tick marks at 25%/50%/75% for reference. Colors shift green → yellow → red by utilization. Adapts to Windows light and dark themes. Updates automatically when the displayed countdown changes. Fades out when hovered (click-through when invisible).
 - **Tray icon** with session percentage (green/yellow/red)
 - **Tooltip** with session %, weekly % (with pace), and reset timers
 - **Right-click** menu: Details, Refresh, Copy Raw JSON, Exit
@@ -37,7 +37,7 @@ That's it. If you're logged into Claude Code, the tray icon should show your ses
 
 <img width="402" height="235" alt="Tray Usage Monitor" src="https://github.com/user-attachments/assets/0479ef8d-bcb8-445e-9b56-df71c411852c" />
 
-If taskbar embedding isn't available (unsupported shell, modified taskbar), the app falls back gracefully to tray icon + popup only.
+If the taskbar is unavailable (unsupported shell), the app falls back gracefully to tray icon + popup only.
 
 ## How it actually works (technically)
 
@@ -58,7 +58,7 @@ Run `claude login` in your terminal. The app picks up the new token automaticall
 ```
 ├── Program.cs            # Entry point
 ├── MainForm.cs           # Tray icon, polling, UI orchestration
-├── TaskbarWidget.cs      # Taskbar-embedded widget (Win32 reparenting + layered window)
+├── TaskbarWidget.cs      # Floating topmost overlay above the taskbar (layered window)
 ├── Win32Interop.cs       # P/Invoke declarations for Win32 APIs
 ├── UsageFetcher.cs       # Single HTTP call to Anthropic API
 ├── UsageData.cs          # Data model

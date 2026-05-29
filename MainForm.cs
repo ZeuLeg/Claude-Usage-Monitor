@@ -338,7 +338,7 @@ public sealed class MainForm : Form
 
         var link = new LinkLabel
         {
-            Text = "github.com/Firnschnee/Tray-Usage-Monitor",
+            Text = "github.com/ZeuLeg/Claude-Usage-Monitor",
             Location = new Point(20, 68),
             AutoSize = true,
             BackColor = Color.Transparent,
@@ -348,7 +348,7 @@ public sealed class MainForm : Form
         link.LinkClicked += (_, _) =>
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "https://github.com/Firnschnee/Tray-Usage-Monitor",
+                FileName = "https://github.com/ZeuLeg/Claude-Usage-Monitor",
                 UseShellExecute = true,
             });
         dlg.Controls.Add(link);
