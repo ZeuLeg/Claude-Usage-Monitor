@@ -1,6 +1,8 @@
-## Claude Usage Monitor - Taskbar Widget + Popup Window 
+## Claude Usage Monitor — a Windows taskbar widget for Claude.ai usage
 
-A Windows tray app that shows your Claude.ai usage at a glance - including a widget floating just above the system tray. 
+A Windows tray app that shows your Claude.ai / Claude Code usage at a glance: a widget floating just above the system tray, a dual progress-ring tray icon, and 90% usage alerts. Most usage monitors are macOS menu-bar apps — this one is built for the **Windows taskbar**.
+
+**No session keys, no cookies, no separate login.** It reuses the OAuth token **Claude Code** already stored on your machine; that token never leaves your computer and the only network call is a single authenticated request to Anthropic's own usage API.
 
 <img width="696" height="56" alt="image" src="https://github.com/user-attachments/assets/58a821ee-bb92-45d5-866c-9f85470c1f11" />
 
@@ -27,6 +29,10 @@ dotnet run
 
 That's it. If you're logged into Claude Code, the tray icon should show your session usage within seconds.
 
+### Skip the daily re-login (optional)
+
+Claude Code's access token expires periodically, so every so often you'll need `claude login`. To avoid that, generate a long-lived token with `claude setup-token` and set it as a user environment variable named `CLAUDE_CODE_OAUTH_TOKEN`. The app uses it automatically (highest priority) and never needs an interactive re-login.
+
 ## What you see
 
 - **Taskbar widget** — floating just above the system tray, always on top. Shows two progress bars (`5h` session + `7d` weekly) with percentage, countdown (e.g. `91% - 2h 3m`), and a pace arrow (▲ ahead / ▼ under / • on pace). Bars have tick marks at 25%/50%/75% for reference. Colors shift green → yellow → red by utilization. Adapts to Windows light and dark themes. Updates automatically when the displayed countdown changes. Fades out when hovered (click-through when invisible).
@@ -38,6 +44,7 @@ If the taskbar is unavailable (unsupported shell), the app falls back gracefully
 
 ## Extras
 
+- **Usage alerts** — a one-time balloon when your `5h` session or `7d` weekly window crosses 90%, so you don't blow past a limit unnoticed (it re-arms after each reset).
 - **Start with Windows** — toggle it in the tray menu (no installer; just a per-user registry Run entry).
 - **Update notifications** — checks GitHub Releases about once a day and tells you when a newer version is out.
 - **Sleep & offline resilient** — recovers within seconds of the connection returning after standby or a network drop, and keeps showing your last-known usage (dimmed, with an offline dot) while offline instead of an error.
@@ -54,18 +61,18 @@ Inspired by [omachala's bash gist](https://gist.github.com/omachala/5ea5af4bfa0b
 
 ## Token expired?
 
-Run `claude login` in your terminal. The app picks up the new token automatically on the next poll cycle.
+Run `claude login` in your terminal — the app keeps retrying on a short backoff and picks up the new token automatically on the next poll, so it self-heals without a restart. Tired of re-logging in? See [Skip the daily re-login](#skip-the-daily-re-login-optional) above.
 
 ## Project structure
 
 ```
-├── Program.cs            # Entry point
-├── MainForm.cs           # Tray icon, polling, UI orchestration
-├── TaskbarWidget.cs      # Floating topmost overlay above the taskbar (layered window)
-├── Win32Interop.cs       # P/Invoke declarations for Win32 APIs
-├── UsageFetcher.cs       # Single HTTP call to Anthropic API
-├── UsageData.cs          # Data model
-└── CredentialReader.cs   # Reads OAuth token from Credential Manager / file
+src/
+├── Program.cs                 # Entry point
+├── App/                       # MainForm coordinator, tray icon renderer, menu, autostart, palette
+├── Polling/UsagePoller.cs     # Poll loop, exponential backoff, power/network recovery
+├── Ui/                        # Floating taskbar widget + About dialog
+├── Api/                       # HTTP fetch, data model, credential reader
+└── Infra/                     # Logger, update checker, Win32 P/Invoke
 ```
 
 ## License

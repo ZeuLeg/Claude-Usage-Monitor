@@ -11,6 +11,8 @@ public sealed class MainForm : Form
 
     private bool _tokenWarningShown;
     private bool _authWarningShown;
+    private bool _sessionAlerted;
+    private bool _weeklyAlerted;
     private TaskbarWidget? _taskbarWidget;
     private ToolStripMenuItem? _updateMenuItem;
     private string? _pendingUpdateTag;
@@ -49,6 +51,9 @@ public sealed class MainForm : Form
             _taskbarWidget?.Update(data);
             _tokenWarningShown = false;
             _authWarningShown = false;
+            MaybeAlert(ref _sessionAlerted, data.SessionPercent, "5h session", data.SessionResetText);
+            if (data.HasWeekly)
+                MaybeAlert(ref _weeklyAlerted, data.WeeklyPercent, "7d weekly", data.WeeklyResetText);
         };
         _poller.TokenMissing += diag =>
         {
@@ -206,6 +211,21 @@ public sealed class MainForm : Form
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Unhandled] {ex}"); }
+    }
+
+    // Balloon once when a window crosses 90%; re-arms after it drops back below (i.e. after a reset).
+    private void MaybeAlert(ref bool alerted, double pct, string label, string resetText)
+    {
+        if (pct >= 90 && !alerted)
+        {
+            alerted = true;
+            _trayIcon.ShowBalloonTip(7000, "Usage warning",
+                $"{label} is at {pct:0}% — resets in {resetText}.", ToolTipIcon.Warning);
+        }
+        else if (pct < 90)
+        {
+            alerted = false;
+        }
     }
 
     // ═══════════════════════════════════════
