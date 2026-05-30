@@ -17,7 +17,7 @@ internal static class AboutDialog
             BackColor = Color.FromArgb(24, 24, 27), ForeColor = Color.White,
             Font = new Font("Segoe UI", 10f), TopMost = true,
             ShowInTaskbar = false,
-            ClientSize = new Size(360, 110),
+            ClientSize = new Size(400, 110),
             StartPosition = FormStartPosition.CenterScreen,
         };
 
