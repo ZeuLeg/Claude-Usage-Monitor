@@ -104,21 +104,21 @@ public class PollPolicyTests
     [Fact]
     public void NextBackoff_Doubles_ThenCaps()
     {
-        Assert.Equal(240_000, ClaudeUsageMonitor.MainForm.NextBackoff(120_000)); // doubles under cap
-        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(240_000)); // 480k → capped at 300k
+        Assert.Equal(240_000, ClaudeUsageMonitor.UsagePoller.NextBackoff(120_000)); // doubles under cap
+        Assert.Equal(300_000, ClaudeUsageMonitor.UsagePoller.NextBackoff(240_000)); // 480k → capped at 300k
     }
 
     [Fact]
     public void NextBackoff_CapsAtFiveMinutes()
     {
-        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(300_000));
-        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(10_000_000));
+        Assert.Equal(300_000, ClaudeUsageMonitor.UsagePoller.NextBackoff(300_000));
+        Assert.Equal(300_000, ClaudeUsageMonitor.UsagePoller.NextBackoff(10_000_000));
     }
 
     [Fact]
     public void ShouldShowStaleIcon_TrueOnlyWhenWeHavePreviousData()
     {
-        Assert.False(ClaudeUsageMonitor.MainForm.ShouldShowStaleIcon(null));
-        Assert.True(ClaudeUsageMonitor.MainForm.ShouldShowStaleIcon(new UsageData()));
+        Assert.False(ClaudeUsageMonitor.UsagePoller.ShouldShowStaleIcon(null));
+        Assert.True(ClaudeUsageMonitor.UsagePoller.ShouldShowStaleIcon(new UsageData()));
     }
 }
