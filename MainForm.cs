@@ -82,7 +82,6 @@ public sealed class MainForm : Form
             await PollAsync();
             _pollTimer.Start();
             _taskbarWidget = new TaskbarWidget(_lastData);
-            _taskbarWidget.ContextMenu = _trayIcon.ContextMenuStrip;
 
             if (UpdateChecker.ShouldCheckToday())
             {
@@ -233,6 +232,14 @@ public sealed class MainForm : Form
             });
         m.Items.Add(openLog);
 
+        var autostart = new ToolStripMenuItem("Start with Windows")
+        {
+            Checked      = IsAutostartEnabled(),
+            CheckOnClick = true,
+        };
+        autostart.Click += (_, _) => SetAutostart(autostart.Checked);
+        m.Items.Add(autostart);
+
         m.Items.Add(new ToolStripSeparator());
 
         _updateMenuItem = new ToolStripMenuItem("Check for Updates");
@@ -252,6 +259,41 @@ public sealed class MainForm : Form
         m.Items.Add(exit);
 
         return m;
+    }
+
+    // ═══════════════════════════════════════
+    // AUTOSTART (HKCU Run key)
+    // ═══════════════════════════════════════
+
+    private const string AutostartName   = "ClaudeUsageMonitor";
+    private const string AutostartRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    private static bool IsAutostartEnabled()
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AutostartRunKey);
+        return key?.GetValue(AutostartName) != null;
+    }
+
+    private static void SetAutostart(bool enabled)
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AutostartRunKey, writable: true);
+            if (key == null) return;
+            if (enabled)
+            {
+                var exe = Environment.ProcessPath;
+                if (exe != null) key.SetValue(AutostartName, $"\"{exe}\"");
+            }
+            else
+            {
+                key.DeleteValue(AutostartName, throwOnMissingValue: false);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Autostart toggle failed: {ex.Message}");
+        }
     }
 
     // ═══════════════════════════════════════
@@ -527,28 +569,35 @@ public sealed class MainForm : Form
 
     private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data)
     {
-        const int sz = 32;
+        // Rendered at 64px (downscaled by the tray) for crisper, bolder rings.
+        const int sz = 64;
+        const float outerInset = 6f,  outerPen = 7f;
+        const float innerInset = 19f, innerPen = 5.5f;
+        float outerD = sz - 2 * outerInset;
+        float innerD = sz - 2 * innerInset;
+
         using var bmp = new Bitmap(sz, sz);
         using var g   = Graphics.FromImage(bmp);
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
 
-        using (var bg = new SolidBrush(Color.FromArgb(220, 22, 22, 30)))
+        using (var bg = new SolidBrush(Color.FromArgb(225, 22, 22, 30)))
             g.FillEllipse(bg, 1, 1, sz - 2, sz - 2);
 
         // Dim track rings
-        using (var tp = new Pen(Color.FromArgb(50, 200, 200, 200), 3.5f))
-            g.DrawEllipse(tp, 4, 4, sz - 8, sz - 8);
+        using (var tp = new Pen(Color.FromArgb(55, 200, 200, 200), outerPen))
+            g.DrawEllipse(tp, outerInset, outerInset, outerD, outerD);
         if (data.HasWeekly)
-            using (var twp = new Pen(Color.FromArgb(40, 200, 200, 200), 2.5f))
-                g.DrawEllipse(twp, 9, 9, sz - 18, sz - 18);
+            using (var twp = new Pen(Color.FromArgb(45, 200, 200, 200), innerPen))
+                g.DrawEllipse(twp, innerInset, innerInset, innerD, innerD);
 
         // Session arc (outer)
         if (data.SessionPercent > 0)
         {
             var sc = data.SessionPercent >= 90 ? CCrit : data.SessionPercent >= 75 ? CWarn : COk;
-            using var sp = new Pen(Color.FromArgb(235, sc), 3.5f);
-            g.DrawArc(sp, 4, 4, sz - 8, sz - 8,
+            using var sp = new Pen(Color.FromArgb(240, sc), outerPen)
+                { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawArc(sp, outerInset, outerInset, outerD, outerD,
                       -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
         }
 
@@ -556,8 +605,9 @@ public sealed class MainForm : Form
         if (data.HasWeekly && data.WeeklyPercent > 0)
         {
             var wc = data.WeeklyPercent >= 90 ? CCrit : data.WeeklyPercent >= 75 ? CWarn : COk;
-            using var wp = new Pen(Color.FromArgb(210, wc), 2.5f);
-            g.DrawArc(wp, 9, 9, sz - 18, sz - 18,
+            using var wp = new Pen(Color.FromArgb(220, wc), innerPen)
+                { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            g.DrawArc(wp, innerInset, innerInset, innerD, innerD,
                       -90f, (float)(Math.Min(data.WeeklyPercent, 100) / 100.0 * 360.0));
         }
 
