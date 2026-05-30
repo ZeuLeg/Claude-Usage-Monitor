@@ -11,6 +11,7 @@
     <Version>0.7.0</Version>
     <Description>Claude.ai Usage Monitor - reads OAuth token from Claude Code</Description>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- Keine externen Dependencies. Null. Nada. -->
