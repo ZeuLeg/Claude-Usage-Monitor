@@ -1,0 +1,1 @@
+- [Project Structure](project-structure.md) — MainForm refactor: god-class split into AutostartManager, Palette, TrayIconRenderer, DetailsWindow, UsagePoller

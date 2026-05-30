@@ -7,7 +7,6 @@ public sealed class MainForm : Form
 {
     private readonly NotifyIcon _trayIcon;
     private readonly TrayIconRenderer _tray;
-    private readonly DetailsWindow _details = new();
     private readonly UsagePoller _poller;
 
     private bool _tokenWarningShown;
@@ -42,12 +41,10 @@ public sealed class MainForm : Form
         _tray = new TrayIconRenderer(_trayIcon, this);
         _tray.ShowText("...", Palette.Gray, "Claude Usage Monitor");
         _trayIcon.Visible = true;
-        _trayIcon.DoubleClick += (_, _) => _details.Show(_poller.LastData, _poller.PollAsync);
 
         _poller.Updated += data =>
         {
             _tray.ShowUsage(data);
-            _details.Update(data);
             _taskbarWidget?.Update(data);
             _tokenWarningShown = false;
         };
@@ -108,12 +105,6 @@ public sealed class MainForm : Form
     {
         var m = new ContextMenuStrip();
 
-        var show = new ToolStripMenuItem("Details") { Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
-        show.Click += (_, _) => _details.Show(_poller.LastData, _poller.PollAsync);
-        m.Items.Add(show);
-
-        m.Items.Add(new ToolStripSeparator());
-
         var refresh = new ToolStripMenuItem("Refresh");
         refresh.Click += (_, _) => FireAndForget(_poller.PollAsync);
         m.Items.Add(refresh);
@@ -152,7 +143,7 @@ public sealed class MainForm : Form
         m.Items.Add(new ToolStripSeparator());
 
         var about = new ToolStripMenuItem("About");
-        about.Click += (_, _) => DetailsWindow.ShowAbout();
+        about.Click += (_, _) => AboutDialog.Show();
         m.Items.Add(about);
 
         m.Items.Add(new ToolStripSeparator());
