@@ -116,7 +116,8 @@ internal sealed class UsagePoller : IDisposable
                 Logger.Warn("seven_day missing from API response; carrying forward previous weekly data.");
             Logger.Info($"Poll OK — session={data.SessionPercent:0.0}% resets@{data.SessionResetsAt:u}, " +
                         $"weekly={data.WeeklyPercent:0.0}% hasWeekly={data.HasWeekly} stale={data.WeeklyStale} " +
-                        $"resets@{data.WeeklyResetsAt:u}");
+                        $"resets@{data.WeeklyResetsAt:u}, " +
+                        $"extraEnabled={data.ExtraEnabled} extra=${data.ExtraUsedDollars:F2}/${data.ExtraLimitDollars:F2}");
             _lastData = data;
             _errors = 0;
             _backoffMs = PollIntervalMs;
