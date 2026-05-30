@@ -42,12 +42,6 @@ internal sealed class TaskbarWidget : IDisposable
     private readonly System.Windows.Forms.Timer _timer;
     private UsageData? _data;
 
-    public ContextMenuStrip? ContextMenu
-    {
-        get => _nw.ContextMenu;
-        set => _nw.ContextMenu = value;
-    }
-
     // ── Constructor ──────────────────────────────────────────────────────────
 
     public TaskbarWidget(UsageData? initialData = null)
@@ -166,8 +160,9 @@ internal sealed class TaskbarWidget : IDisposable
         g.SmoothingMode      = SmoothingMode.AntiAlias;
         g.TextRenderingHint  = TextRenderingHint.ClearTypeGridFit;
 
-        // Background: semi-transparent in dark mode; soft plate in light mode.
-        int bgAlpha = light ? 220 : 180;
+        // Background: near-opaque so the idle widget stays readable. Seeing what's
+        // behind it is handled by the hover-fade (alpha→0), not by a translucent bg.
+        int bgAlpha = light ? 245 : 235;
         using var bgPath  = RoundedRect(new RectangleF(0, 0, w - 1, h - 1), 4);
         using (var bgBrush = new SolidBrush(Color.FromArgb(bgAlpha, BgColor(light))))
             g.FillPath(bgBrush, bgPath);
@@ -238,7 +233,7 @@ internal sealed class TaskbarWidget : IDisposable
             int textX = barX + barW + BarTextGap;
 
             string pctStr  = $"{pct:0}%";
-            string timeStr = $" {FormatSpanShort(resetIn)}";
+            string timeStr = FormatSpanShort(resetIn);
 
             using var boldFont  = new Font("Segoe UI", 8.5f, FontStyle.Bold);
             using var timeFont  = new Font("Segoe UI", 7.5f);
@@ -247,12 +242,13 @@ internal sealed class TaskbarWidget : IDisposable
 
             var centerFmt2 = new StringFormat { Alignment = StringAlignment.Near,
                                                 LineAlignment = StringAlignment.Center };
-            int pctW = (int)g.MeasureString(pctStr, boldFont).Width + 1;
+            // Fixed-width pct field so the time text starts at the same column on both rows.
+            const int pctFieldW = 32;
 
             g.DrawString(pctStr, boldFont, pctBrush,
-                         new RectangleF(textX, rowY, pctW, BarH), centerFmt2);
+                         new RectangleF(textX, rowY, pctFieldW, BarH), centerFmt2);
             g.DrawString(timeStr, timeFont, timeBrush,
-                         new RectangleF(textX + pctW, rowY, TextW - 20 - pctW, BarH), centerFmt2);
+                         new RectangleF(textX + pctFieldW, rowY, TextW - 20 - pctFieldW, BarH), centerFmt2);
 
             int glyphX  = textX + TextW - 12;
             int glyphCY = rowY + BarH / 2;
@@ -361,15 +357,15 @@ internal sealed class TaskbarWidget : IDisposable
     private sealed class WidgetNativeWindow : NativeWindow, IDisposable
     {
         private const int WM_MOUSEMOVE = 0x0200;
-        private const int WM_RBUTTONUP = 0x0205;
 
-        private int _alpha       = 200;
-        private int _targetAlpha = 200;
+        private const int RestAlpha = 255; // fully opaque at rest; fades to 0 on hover
+
+        private int _alpha       = RestAlpha;
+        private int _targetAlpha = RestAlpha;
 
         private readonly System.Windows.Forms.Timer _fadeTimer;
         private readonly Action _repaint;
 
-        public ContextMenuStrip? ContextMenu { get; set; }
         public int CurrentAlpha => _alpha;
 
         internal WidgetNativeWindow(Action repaint)
@@ -417,7 +413,7 @@ internal sealed class TaskbarWidget : IDisposable
 
         private void OnFadeTick(object? sender, EventArgs e)
         {
-            const int step = 20; // 200/20 = 10 ticks × 40ms = ~400ms fade
+            const int step = 64; // 255/64 ≈ 4 ticks × 40ms = ~160ms fade
 
             if (_alpha < _targetAlpha)      _alpha = Math.Min(_targetAlpha, _alpha + step);
             else if (_alpha > _targetAlpha) _alpha = Math.Max(_targetAlpha, _alpha - step);
@@ -429,7 +425,7 @@ internal sealed class TaskbarWidget : IDisposable
                 Win32Interop.GetWindowRect(Handle, out var wr);
                 bool inside = pt.X >= wr.Left && pt.X <= wr.Right
                            && pt.Y >= wr.Top  && pt.Y <= wr.Bottom;
-                if (!inside) _targetAlpha = 200;
+                if (!inside) _targetAlpha = RestAlpha;
             }
 
             _repaint();
@@ -518,18 +514,10 @@ internal sealed class TaskbarWidget : IDisposable
 
         protected override void WndProc(ref Message m)
         {
-            switch (m.Msg)
+            if (m.Msg == WM_MOUSEMOVE)
             {
-                case WM_MOUSEMOVE:
-                    _targetAlpha = 0;
-                    return;
-                case WM_RBUTTONUP:
-                    if (ContextMenu != null)
-                    {
-                        Win32Interop.GetCursorPos(out var pt);
-                        ContextMenu.Show(pt.X, pt.Y);
-                    }
-                    return;
+                _targetAlpha = 0;
+                return;
             }
             base.WndProc(ref m);
         }
