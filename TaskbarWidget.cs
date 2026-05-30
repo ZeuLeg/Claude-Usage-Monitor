@@ -236,19 +236,35 @@ internal sealed class TaskbarWidget : IDisposable
             string timeStr = FormatSpanShort(resetIn);
 
             using var boldFont  = new Font("Segoe UI", 8.5f, FontStyle.Bold);
-            using var timeFont  = new Font("Segoe UI", 7.5f);
+            using var timeFont  = new Font("Segoe UI", 8f);
             using var pctBrush  = new SolidBrush(FillColor(pct));
-            using var timeBrush = new SolidBrush(Color.FromArgb(150, textClr));
+            using var timeBrush = new SolidBrush(Color.FromArgb(210, textClr)); // brighter = more prominent
 
-            var centerFmt2 = new StringFormat { Alignment = StringAlignment.Near,
-                                                LineAlignment = StringAlignment.Center };
-            // Fixed-width pct field so the time text starts at the same column on both rows.
-            const int pctFieldW = 32;
+            // NoClip so the trailing "%" is never truncated by the field edge.
+            using var pctFmt = new StringFormat
+            {
+                Alignment     = StringAlignment.Near,
+                LineAlignment = StringAlignment.Center,
+                FormatFlags   = StringFormatFlags.NoClip,
+            };
+            // Time right-aligned so it sits next to the pace glyph (closes the gap).
+            using var timeFmt = new StringFormat
+            {
+                Alignment     = StringAlignment.Far,
+                LineAlignment = StringAlignment.Center,
+                FormatFlags   = StringFormatFlags.NoClip,
+            };
+
+            // Fixed-width pct field so the time column aligns across both rows;
+            // 36px holds "100%" without clipping.
+            const int pctFieldW = 36;
+            int timeLeft  = textX + pctFieldW;
+            int timeRight = textX + TextW - 12 - 9;      // small gap before the pace glyph (glyph center = textX+TextW-12)
 
             g.DrawString(pctStr, boldFont, pctBrush,
-                         new RectangleF(textX, rowY, pctFieldW, BarH), centerFmt2);
+                         new RectangleF(textX, rowY, pctFieldW, BarH), pctFmt);
             g.DrawString(timeStr, timeFont, timeBrush,
-                         new RectangleF(textX + pctFieldW, rowY, TextW - 20 - pctFieldW, BarH), centerFmt2);
+                         new RectangleF(timeLeft, rowY, timeRight - timeLeft, BarH), timeFmt);
 
             int glyphX  = textX + TextW - 12;
             int glyphCY = rowY + BarH / 2;
