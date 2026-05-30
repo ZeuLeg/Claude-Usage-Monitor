@@ -20,7 +20,7 @@ public sealed class MainForm : Form
     private int _errors;
     private int _backoffMs = PollIntervalMs;
     private bool _tokenWarningShown;
-    private IntPtr _trayIconHandle = IntPtr.Zero;
+    private readonly TrayIconRenderer _tray;
     private readonly CancellationTokenSource _cts = new();
 
     private Form? _widget;
@@ -38,16 +38,6 @@ public sealed class MainForm : Form
     private const int PBT_APMRESUMEAUTOMATIC = 0x0012;
     private const int WM_SETTINGCHANGE       = 0x001A;
 
-    private static readonly Color COk = Color.FromArgb(34, 197, 94);
-    private static readonly Color CWarn = Color.FromArgb(251, 191, 36);
-    private static readonly Color CCrit = Color.FromArgb(239, 68, 68);
-    private static readonly Color CGray = Color.FromArgb(156, 163, 175);
-    private static readonly Color CWeekly = Color.FromArgb(56, 189, 248); // cyan — weekly reference on session bar
-
-    // over-pace = red (burning quota fast), under-pace = green (headroom), on-pace = yellow
-    private static Color PaceColor(double diff) =>
-        diff >= 5 ? CCrit : diff <= -5 ? COk : CWarn;
-
     public MainForm()
     {
         ShowInTaskbar = false;
@@ -58,15 +48,14 @@ public sealed class MainForm : Form
 
         _fetcher = new UsageFetcher();
 
-        var (initIcon, initHandle) = MakeIcon("...", CGray);
-        _trayIconHandle = initHandle;
         _trayIcon = new NotifyIcon
         {
-            Icon = initIcon,
             Text = "Claude Usage Monitor",
             ContextMenuStrip = BuildMenu(),
-            Visible = true,
         };
+        _tray = new TrayIconRenderer(_trayIcon, this);
+        _tray.ShowText("...", Palette.Gray, "Claude Usage Monitor");
+        _trayIcon.Visible = true;
         _trayIcon.DoubleClick += (_, _) => ShowDetails();
 
         _pollTimer = new System.Windows.Forms.Timer { Interval = 120_000 }; // 2 min
@@ -118,7 +107,7 @@ public sealed class MainForm : Form
 #endif
                 var diagMsg = "No OAuth token found.\nPlease run 'claude login'.";
 
-                SetIcon("!", CCrit, diagMsg);
+                _tray.ShowText("!", Palette.Crit, diagMsg);
                 if (!_tokenWarningShown)
                 {
                     _tokenWarningShown = true;
@@ -142,15 +131,15 @@ public sealed class MainForm : Form
 
             ScheduleResetPoll(data);
             if (InvokeRequired)
-                BeginInvoke(new Action(() => { SetIconVisual(data); RefreshWidget(); _taskbarWidget?.Update(data); }));
-            else { SetIconVisual(data); RefreshWidget(); _taskbarWidget?.Update(data); }
+                BeginInvoke(new Action(() => { _tray.ShowUsage(data); RefreshWidget(); _taskbarWidget?.Update(data); }));
+            else { _tray.ShowUsage(data); RefreshWidget(); _taskbarWidget?.Update(data); }
         }
         catch (OperationCanceledException) { }
         catch (UnauthorizedAccessException)
         {
             _pollTimer.Stop(); // no point retrying until user re-auths
             Logger.Error("OAuth token expired or invalid.");
-            SetIcon("AUTH", CCrit, "OAuth token expired.\nRun 'claude login'.");
+            _tray.ShowText("AUTH", Palette.Crit, "OAuth token expired.\nRun 'claude login'.");
             _trayIcon.ShowBalloonTip(8000, "Token expired",
                 "Please run 'claude login' in the terminal.", ToolTipIcon.Warning);
         }
@@ -162,11 +151,11 @@ public sealed class MainForm : Form
             Logger.Error($"Poll failed (attempt {_errors}): {ex.GetType().Name}: {ex.Message}");
             if (ShouldShowStaleIcon(_lastData))
             {
-                SetIconStale(_lastData!, "No connection — showing last known usage");
+                _tray.ShowStale(_lastData!, "No connection — showing last known usage");
             }
             else
             {
-                SetIcon("ERR", CCrit, $"Error: {ex.Message}");
+                _tray.ShowText("ERR", Palette.Crit, $"Error: {ex.Message}");
                 if (_errors >= 3)
                     _trayIcon.ShowBalloonTip(5000, "Error", ex.Message, ToolTipIcon.Error);
             }
@@ -339,7 +328,7 @@ public sealed class MainForm : Form
             {
                 Text = "Loading...",
                 Location = new Point(20, 15), Size = new Size(370, 22),
-                ForeColor = CGray, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                ForeColor = Palette.Gray, Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
             });
 
         _widget.Show();
@@ -423,11 +412,11 @@ public sealed class MainForm : Form
         var sessionSub = $"Reset: {d.SessionResetText} | {d.SessionPaceText}";
         if (d.HasWeekly)
             AddBar(_widget, ref y, "Session (5h)", d.SessionPercent, sessionSub,
-                (d.SessionExpectedPercent, PaceColor(d.SessionPaceDiff)),
-                (d.WeeklyExpectedPercent, CWeekly));
+                (d.SessionExpectedPercent, Palette.Pace(d.SessionPaceDiff)),
+                (d.WeeklyExpectedPercent, Palette.Weekly));
         else
             AddBar(_widget, ref y, "Session (5h)", d.SessionPercent, sessionSub + updated,
-                (d.SessionExpectedPercent, PaceColor(d.SessionPaceDiff)));
+                (d.SessionExpectedPercent, Palette.Pace(d.SessionPaceDiff)));
 
         // Weekly bar: colored marker + pace status + updated time in subtitle
         if (d.HasWeekly)
@@ -435,7 +424,7 @@ public sealed class MainForm : Form
             var paceStatus = d.WeeklyPaceDiff >= 5 ? "ahead" : d.WeeklyPaceDiff <= -5 ? "under" : "on pace";
             var weeklySub = $"Reset: {d.WeeklyResetText} | {d.WeeklyPaceDiff:+0.0;-0.0;0.0}% {paceStatus}";
             AddBar(_widget, ref y, "Weekly (7d)", d.WeeklyPercent, weeklySub + updated,
-                (d.WeeklyExpectedPercent, PaceColor(d.WeeklyPaceDiff)));
+                (d.WeeklyExpectedPercent, Palette.Pace(d.WeeklyPaceDiff)));
         }
 
         if (d.ExtraEnabled) AddBar(_widget, ref y, "Extra Usage", d.ExtraPercent,
@@ -450,7 +439,7 @@ public sealed class MainForm : Form
     private static void AddBar(Form f, ref int y, string label, double pct, string sub,
         params (double Pct, Color Clr)[] markers)
     {
-        var color = pct >= 90 ? CCrit : pct >= 75 ? CWarn : COk;
+        var color = pct >= 90 ? Palette.Crit : pct >= 75 ? Palette.Warn : Palette.Ok;
 
         f.Controls.Add(new Label
         {
@@ -526,13 +515,6 @@ public sealed class MainForm : Form
     // ASYNC HELPER
     // ═══════════════════════════════════════
 
-    private static string TruncateTooltip(string text)
-    {
-        if (text.Length <= 127) return text;
-        var cut = text.LastIndexOf('\n', 126);
-        return cut > 0 ? text[..cut] : text[..127];
-    }
-
     private static async void FireAndForget(Func<Task> action)
     {
         try { await action(); }
@@ -540,131 +522,6 @@ public sealed class MainForm : Form
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Unhandled] {ex}"); }
     }
 
-    // ═══════════════════════════════════════
-    // ICON RENDERING
-    // ═══════════════════════════════════════
-
-    private static (Icon icon, IntPtr hicon) MakeIcon(string text, Color color)
-    {
-        const int sz = 32;
-        using var bmp = new Bitmap(sz, sz);
-        using var g = Graphics.FromImage(bmp);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-        g.Clear(Color.Transparent);
-
-        using var bg = new SolidBrush(Color.FromArgb(30, 30, 30));
-        var r = new Rectangle(0, 0, sz, sz);
-        using var rr = new GraphicsPath();
-        rr.AddArc(r.X, r.Y, 8, 8, 180, 90);
-        rr.AddArc(r.Right - 8, r.Y, 8, 8, 270, 90);
-        rr.AddArc(r.Right - 8, r.Bottom - 8, 8, 8, 0, 90);
-        rr.AddArc(r.X, r.Bottom - 8, 8, 8, 90, 90);
-        rr.CloseFigure();
-        g.FillPath(bg, rr);
-
-        using var font = new Font("Segoe UI", text.Length > 3 ? 7f : 9f, FontStyle.Bold);
-        using var brush = new SolidBrush(color);
-        using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        g.DrawString(text, font, brush, new RectangleF(0, 0, sz, sz), fmt);
-
-        var hicon = bmp.GetHicon();
-        return (Icon.FromHandle(hicon), hicon);
-    }
-
-    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data, bool dim = false)
-    {
-        // Rendered at 64px (downscaled by the tray) for crisper, bolder rings.
-        const int sz = 64;
-        int sessA = dim ? 90 : 240;   // session arc alpha
-        int weekA = dim ? 80 : 220;   // weekly arc alpha
-        const float outerInset = 6f,  outerPen = 7f;
-        const float innerInset = 19f, innerPen = 5.5f;
-        float outerD = sz - 2 * outerInset;
-        float innerD = sz - 2 * innerInset;
-
-        using var bmp = new Bitmap(sz, sz);
-        using var g   = Graphics.FromImage(bmp);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Color.Transparent);
-
-        using (var bg = new SolidBrush(Color.FromArgb(225, 22, 22, 30)))
-            g.FillEllipse(bg, 1, 1, sz - 2, sz - 2);
-
-        // Dim track rings
-        using (var tp = new Pen(Color.FromArgb(55, 200, 200, 200), outerPen))
-            g.DrawEllipse(tp, outerInset, outerInset, outerD, outerD);
-        if (data.HasWeekly)
-            using (var twp = new Pen(Color.FromArgb(45, 200, 200, 200), innerPen))
-                g.DrawEllipse(twp, innerInset, innerInset, innerD, innerD);
-
-        // Session arc (outer)
-        if (data.SessionPercent > 0)
-        {
-            var sc = data.SessionPercent >= 90 ? CCrit : data.SessionPercent >= 75 ? CWarn : COk;
-            using var sp = new Pen(Color.FromArgb(sessA, sc), outerPen)
-                { StartCap = LineCap.Round, EndCap = LineCap.Round };
-            g.DrawArc(sp, outerInset, outerInset, outerD, outerD,
-                      -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
-        }
-
-        // Weekly arc (inner) — cyan "reference" color by default (matches the popup's
-        // weekly markers), but escalates to amber/red once weekly usage gets critical.
-        if (data.HasWeekly && data.WeeklyPercent > 0)
-        {
-            var wc = data.WeeklyPercent >= 90 ? CCrit : data.WeeklyPercent >= 75 ? CWarn : CWeekly;
-            using var wp = new Pen(Color.FromArgb(weekA, wc), innerPen)
-                { StartCap = LineCap.Round, EndCap = LineCap.Round };
-            g.DrawArc(wp, innerInset, innerInset, innerD, innerD,
-                      -90f, (float)(Math.Min(data.WeeklyPercent, 100) / 100.0 * 360.0));
-        }
-
-        if (dim)
-            using (var dot = new SolidBrush(Color.FromArgb(230, 130, 130, 140)))
-                g.FillEllipse(dot, sz - 18, sz - 18, 13, 13);
-
-        var hicon = bmp.GetHicon();
-        return (Icon.FromHandle(hicon), hicon);
-    }
-
-    private void SetIcon(string text, Color color, string tooltip)
-    {
-        if (InvokeRequired) { BeginInvoke(() => SetIcon(text, color, tooltip)); return; }
-        var old = _trayIcon.Icon;
-        var oldHandle = _trayIconHandle;
-        var (newIcon, newHandle) = MakeIcon(text, color);
-        _trayIcon.Icon = newIcon;
-        _trayIconHandle = newHandle;
-        _trayIcon.Text = TruncateTooltip(tooltip);
-        old?.Dispose();
-        if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
-    }
-
-    private void SetIconVisual(UsageData data)
-    {
-        if (InvokeRequired) { BeginInvoke(() => SetIconVisual(data)); return; }
-        var old       = _trayIcon.Icon;
-        var oldHandle = _trayIconHandle;
-        var (newIcon, newHandle) = MakeIconVisual(data);
-        _trayIcon.Icon      = newIcon;
-        _trayIconHandle     = newHandle;
-        _trayIcon.Text      = TruncateTooltip(data.TooltipText);
-        old?.Dispose();
-        if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
-    }
-
-    private void SetIconStale(UsageData data, string reason)
-    {
-        if (InvokeRequired) { BeginInvoke(() => SetIconStale(data, reason)); return; }
-        var old       = _trayIcon.Icon;
-        var oldHandle = _trayIconHandle;
-        var (newIcon, newHandle) = MakeIconVisual(data, dim: true);
-        _trayIcon.Icon  = newIcon;
-        _trayIconHandle = newHandle;
-        _trayIcon.Text  = TruncateTooltip($"{reason}\nLast updated: {data.FetchedAt:HH:mm}");
-        old?.Dispose();
-        if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
-    }
 
     // ═══════════════════════════════════════
     // LIFECYCLE
@@ -723,7 +580,7 @@ public sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged; System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged; _cts.Cancel(); _cts.Dispose(); _pollGuard.Dispose(); _widget?.Dispose(); _taskbarWidget?.Dispose(); _pollTimer?.Dispose(); _resetTimer?.Dispose(); _trayIcon?.Dispose(); _fetcher?.Dispose(); if (_trayIconHandle != IntPtr.Zero) Win32Interop.DestroyIcon(_trayIconHandle); }
+        if (disposing) { Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged; System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged; _cts.Cancel(); _cts.Dispose(); _pollGuard.Dispose(); _widget?.Dispose(); _taskbarWidget?.Dispose(); _pollTimer?.Dispose(); _resetTimer?.Dispose(); _tray.Dispose(); _trayIcon?.Dispose(); _fetcher?.Dispose(); }
         base.Dispose(disposing);
     }
 }
