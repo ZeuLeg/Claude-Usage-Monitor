@@ -274,10 +274,10 @@ public sealed class MainForm : Form
 
         var autostart = new ToolStripMenuItem("Start with Windows")
         {
-            Checked      = IsAutostartEnabled(),
+            Checked      = AutostartManager.IsEnabled(),
             CheckOnClick = true,
         };
-        autostart.Click += (_, _) => SetAutostart(autostart.Checked);
+        autostart.Click += (_, _) => AutostartManager.Set(autostart.Checked);
         m.Items.Add(autostart);
 
         m.Items.Add(new ToolStripSeparator());
@@ -299,41 +299,6 @@ public sealed class MainForm : Form
         m.Items.Add(exit);
 
         return m;
-    }
-
-    // ═══════════════════════════════════════
-    // AUTOSTART (HKCU Run key)
-    // ═══════════════════════════════════════
-
-    private const string AutostartName   = "ClaudeUsageMonitor";
-    private const string AutostartRunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-
-    private static bool IsAutostartEnabled()
-    {
-        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AutostartRunKey);
-        return key?.GetValue(AutostartName) != null;
-    }
-
-    private static void SetAutostart(bool enabled)
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(AutostartRunKey, writable: true);
-            if (key == null) return;
-            if (enabled)
-            {
-                var exe = Environment.ProcessPath;
-                if (exe != null) key.SetValue(AutostartName, $"\"{exe}\"");
-            }
-            else
-            {
-                key.DeleteValue(AutostartName, throwOnMissingValue: false);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Error($"Autostart toggle failed: {ex.Message}");
-        }
     }
 
     // ═══════════════════════════════════════
