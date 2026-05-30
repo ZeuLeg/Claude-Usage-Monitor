@@ -11,3 +11,6 @@ AUDIT_REPORT.md
 # OS
 Thumbs.db
 desktop.ini
+
+# Claude Code agent memory / local state
+.claude/
