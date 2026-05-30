@@ -247,10 +247,10 @@ internal sealed class TaskbarWidget : IDisposable
                 LineAlignment = StringAlignment.Center,
                 FormatFlags   = StringFormatFlags.NoClip,
             };
-            // Time right-aligned so it sits next to the pace glyph (closes the gap).
+            // Time centered between the percentage and the pace glyph.
             using var timeFmt = new StringFormat
             {
-                Alignment     = StringAlignment.Far,
+                Alignment     = StringAlignment.Center,
                 LineAlignment = StringAlignment.Center,
                 FormatFlags   = StringFormatFlags.NoClip,
             };
