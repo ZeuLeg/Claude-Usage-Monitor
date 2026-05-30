@@ -30,7 +30,7 @@ That's it. If you're logged into Claude Code, the tray icon should show your ses
 ## What you see
 
 - **Taskbar widget** — floating just above the system tray, always on top. Shows two progress bars (`5h` session + `7d` weekly) with percentage, countdown (e.g. `91% - 2h 3m`), and a pace arrow (▲ ahead / ▼ under / • on pace). Bars have tick marks at 25%/50%/75% for reference. Colors shift green → yellow → red by utilization. Adapts to Windows light and dark themes. Updates automatically when the displayed countdown changes. Fades out when hovered (click-through when invisible).
-- **Tray icon** — two concentric rings: the outer `5h` session ring shifts green → yellow → red as you approach the limit, the inner `7d` weekly ring stays cyan (the app's weekly-reference color, matching the popup markers). Dims to the last-known reading when offline.
+- **Tray icon** — two concentric rings: the outer `5h` session ring shifts green → yellow → red as you approach the limit. The inner `7d` weekly ring is cyan by default (the app's weekly-reference color, matching the popup markers) and escalates to amber/red only when weekly usage gets critical. Dims to the last-known reading when offline.
 - **Tooltip** with session %, weekly % (with pace), and reset timers
 - **Right-click** menu: Details, Refresh, Copy Status Text, Open Log Folder, Start with Windows, Check for Updates, About, Exit
 - **Popup window** — opens on startup and on double-click, always on top. Three progress bars: `5h` session, `7d` weekly, `extra usage` monthly — with colored pace markers and subtitles (e.g. Reset: 1h 23m | +12% ahead)
