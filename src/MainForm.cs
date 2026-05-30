@@ -643,11 +643,11 @@ public sealed class MainForm : Form
                       -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
         }
 
-        // Weekly arc (inner)
+        // Weekly arc (inner) — steady cyan "reference" channel (matches the popup's
+        // weekly markers); the outer session ring carries the green→yellow→red alarm.
         if (data.HasWeekly && data.WeeklyPercent > 0)
         {
-            var wc = data.WeeklyPercent >= 90 ? CCrit : data.WeeklyPercent >= 75 ? CWarn : COk;
-            using var wp = new Pen(Color.FromArgb(weekA, wc), innerPen)
+            using var wp = new Pen(Color.FromArgb(weekA, CWeekly), innerPen)
                 { StartCap = LineCap.Round, EndCap = LineCap.Round };
             g.DrawArc(wp, innerInset, innerInset, innerD, innerD,
                       -90f, (float)(Math.Min(data.WeeklyPercent, 100) / 100.0 * 360.0));
