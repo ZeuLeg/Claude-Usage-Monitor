@@ -10,6 +10,7 @@ public sealed class MainForm : Form
     private readonly UsagePoller _poller;
 
     private bool _tokenWarningShown;
+    private bool _authWarningShown;
     private TaskbarWidget? _taskbarWidget;
     private ToolStripMenuItem? _updateMenuItem;
     private string? _pendingUpdateTag;
@@ -47,6 +48,7 @@ public sealed class MainForm : Form
             _tray.ShowUsage(data);
             _taskbarWidget?.Update(data);
             _tokenWarningShown = false;
+            _authWarningShown = false;
         };
         _poller.TokenMissing += diag =>
         {
@@ -60,8 +62,12 @@ public sealed class MainForm : Form
         _poller.AuthExpired += () =>
         {
             _tray.ShowText("AUTH", Palette.Crit, "OAuth token expired.\nRun 'claude login'.");
-            _trayIcon.ShowBalloonTip(8000, "Token expired",
-                "Please run 'claude login' in the terminal.", ToolTipIcon.Warning);
+            if (!_authWarningShown)
+            {
+                _authWarningShown = true;
+                _trayIcon.ShowBalloonTip(8000, "Token expired",
+                    "Please run 'claude login' in the terminal.", ToolTipIcon.Warning);
+            }
         };
         _poller.Failed += (last, msg, count) =>
         {

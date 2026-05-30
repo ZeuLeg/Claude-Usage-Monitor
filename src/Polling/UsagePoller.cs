@@ -129,7 +129,11 @@ internal sealed class UsagePoller : IDisposable
         catch (OperationCanceledException) { }
         catch (UnauthorizedAccessException)
         {
-            _pollTimer.Stop(); // no point retrying until user re-auths
+            // Keep retrying on backoff (don't stop the timer): once the user re-runs
+            // 'claude login', the next poll picks up the fresh token automatically.
+            _errors++;
+            _backoffMs = NextBackoff(_backoffMs);
+            _pollTimer.Interval = _backoffMs;
             Logger.Error("OAuth token expired or invalid.");
             AuthExpired?.Invoke();
         }
