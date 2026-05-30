@@ -98,3 +98,27 @@ public class Win32InteropTests
         Assert.Equal(0x00000008u, Win32Interop.WS_EX_TOPMOST);
     }
 }
+
+public class PollPolicyTests
+{
+    [Fact]
+    public void NextBackoff_Doubles_ThenCaps()
+    {
+        Assert.Equal(240_000, ClaudeUsageMonitor.MainForm.NextBackoff(120_000)); // doubles under cap
+        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(240_000)); // 480k → capped at 300k
+    }
+
+    [Fact]
+    public void NextBackoff_CapsAtFiveMinutes()
+    {
+        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(300_000));
+        Assert.Equal(300_000, ClaudeUsageMonitor.MainForm.NextBackoff(10_000_000));
+    }
+
+    [Fact]
+    public void ShouldShowStaleIcon_TrueOnlyWhenWeHavePreviousData()
+    {
+        Assert.False(ClaudeUsageMonitor.MainForm.ShouldShowStaleIcon(null));
+        Assert.True(ClaudeUsageMonitor.MainForm.ShouldShowStaleIcon(new UsageData()));
+    }
+}

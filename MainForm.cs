@@ -13,7 +13,7 @@ public sealed class MainForm : Form
     private readonly UsageFetcher _fetcher;
 
     private const int PollIntervalMs = 120_000;  // 2 min base
-    private const int MaxBackoffMs   = 960_000;  // 16 min cap
+    private const int MaxBackoffMs   = 300_000;  // 5 min cap
 
     private readonly SemaphoreSlim _pollGuard = new(1, 1);
     private UsageData? _lastData;
@@ -90,6 +90,10 @@ public sealed class MainForm : Form
                 if (tag != null) ShowUpdateNotification(tag);
             }
         });
+
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+
         startup.Start();
     }
 
@@ -153,17 +157,53 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             _errors++;
-            _backoffMs = Math.Min(_backoffMs * 2, MaxBackoffMs);
+            _backoffMs = NextBackoff(_backoffMs);
             _pollTimer.Interval = _backoffMs;
             Logger.Error($"Poll failed (attempt {_errors}): {ex.GetType().Name}: {ex.Message}");
-            SetIcon("ERR", CCrit, $"Error: {ex.Message}");
-            if (_errors >= 3)
-                _trayIcon.ShowBalloonTip(5000, "Error", ex.Message, ToolTipIcon.Error);
+            if (ShouldShowStaleIcon(_lastData))
+            {
+                SetIconStale(_lastData!, "No connection — showing last known usage");
+            }
+            else
+            {
+                SetIcon("ERR", CCrit, $"Error: {ex.Message}");
+                if (_errors >= 3)
+                    _trayIcon.ShowBalloonTip(5000, "Error", ex.Message, ToolTipIcon.Error);
+            }
         }
         finally
         {
             _pollGuard.Release();
         }
+    }
+
+    internal static int NextBackoff(int current) => Math.Min(current * 2, MaxBackoffMs);
+
+    internal static bool ShouldShowStaleIcon(UsageData? last) => last != null;
+
+    private void TriggerImmediateRecovery(string reason)
+    {
+        if (!IsHandleCreated) return;
+        BeginInvoke(() =>
+        {
+            Logger.Info($"Immediate recovery: {reason}");
+            _backoffMs = PollIntervalMs;
+            _pollTimer.Interval = PollIntervalMs;
+            FireAndForget(PollAsync);
+        });
+    }
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+            TriggerImmediateRecovery("power resume");
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        // Only react while we're actually failing, to avoid poll storms on routine changes.
+        if (_errors > 0)
+            TriggerImmediateRecovery("network address changed");
     }
 
     private void ScheduleResetPoll(UsageData data)
@@ -567,10 +607,12 @@ public sealed class MainForm : Form
         return (Icon.FromHandle(hicon), hicon);
     }
 
-    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data)
+    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data, bool dim = false)
     {
         // Rendered at 64px (downscaled by the tray) for crisper, bolder rings.
         const int sz = 64;
+        int sessA = dim ? 90 : 240;   // session arc alpha
+        int weekA = dim ? 80 : 220;   // weekly arc alpha
         const float outerInset = 6f,  outerPen = 7f;
         const float innerInset = 19f, innerPen = 5.5f;
         float outerD = sz - 2 * outerInset;
@@ -595,7 +637,7 @@ public sealed class MainForm : Form
         if (data.SessionPercent > 0)
         {
             var sc = data.SessionPercent >= 90 ? CCrit : data.SessionPercent >= 75 ? CWarn : COk;
-            using var sp = new Pen(Color.FromArgb(240, sc), outerPen)
+            using var sp = new Pen(Color.FromArgb(sessA, sc), outerPen)
                 { StartCap = LineCap.Round, EndCap = LineCap.Round };
             g.DrawArc(sp, outerInset, outerInset, outerD, outerD,
                       -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
@@ -605,11 +647,15 @@ public sealed class MainForm : Form
         if (data.HasWeekly && data.WeeklyPercent > 0)
         {
             var wc = data.WeeklyPercent >= 90 ? CCrit : data.WeeklyPercent >= 75 ? CWarn : COk;
-            using var wp = new Pen(Color.FromArgb(220, wc), innerPen)
+            using var wp = new Pen(Color.FromArgb(weekA, wc), innerPen)
                 { StartCap = LineCap.Round, EndCap = LineCap.Round };
             g.DrawArc(wp, innerInset, innerInset, innerD, innerD,
                       -90f, (float)(Math.Min(data.WeeklyPercent, 100) / 100.0 * 360.0));
         }
+
+        if (dim)
+            using (var dot = new SolidBrush(Color.FromArgb(230, 130, 130, 140)))
+                g.FillEllipse(dot, sz - 18, sz - 18, 13, 13);
 
         var hicon = bmp.GetHicon();
         return (Icon.FromHandle(hicon), hicon);
@@ -637,6 +683,19 @@ public sealed class MainForm : Form
         _trayIcon.Icon      = newIcon;
         _trayIconHandle     = newHandle;
         _trayIcon.Text      = TruncateTooltip(data.TooltipText);
+        old?.Dispose();
+        if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
+    }
+
+    private void SetIconStale(UsageData data, string reason)
+    {
+        if (InvokeRequired) { BeginInvoke(() => SetIconStale(data, reason)); return; }
+        var old       = _trayIcon.Icon;
+        var oldHandle = _trayIconHandle;
+        var (newIcon, newHandle) = MakeIconVisual(data, dim: true);
+        _trayIcon.Icon  = newIcon;
+        _trayIconHandle = newHandle;
+        _trayIcon.Text  = TruncateTooltip($"{reason}\nLast updated: {data.FetchedAt:HH:mm}");
         old?.Dispose();
         if (oldHandle != IntPtr.Zero) Win32Interop.DestroyIcon(oldHandle);
     }
@@ -698,7 +757,7 @@ public sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _cts.Cancel(); _cts.Dispose(); _pollGuard.Dispose(); _widget?.Dispose(); _taskbarWidget?.Dispose(); _pollTimer?.Dispose(); _resetTimer?.Dispose(); _trayIcon?.Dispose(); _fetcher?.Dispose(); if (_trayIconHandle != IntPtr.Zero) Win32Interop.DestroyIcon(_trayIconHandle); }
+        if (disposing) { Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged; System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged; _cts.Cancel(); _cts.Dispose(); _pollGuard.Dispose(); _widget?.Dispose(); _taskbarWidget?.Dispose(); _pollTimer?.Dispose(); _resetTimer?.Dispose(); _trayIcon?.Dispose(); _fetcher?.Dispose(); if (_trayIconHandle != IntPtr.Zero) Win32Interop.DestroyIcon(_trayIconHandle); }
         base.Dispose(disposing);
     }
 }
