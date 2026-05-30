@@ -30,14 +30,20 @@ That's it. If you're logged into Claude Code, the tray icon should show your ses
 ## What you see
 
 - **Taskbar widget** — floating just above the system tray, always on top. Shows two progress bars (`5h` session + `7d` weekly) with percentage, countdown (e.g. `91% - 2h 3m`), and a pace arrow (▲ ahead / ▼ under / • on pace). Bars have tick marks at 25%/50%/75% for reference. Colors shift green → yellow → red by utilization. Adapts to Windows light and dark themes. Updates automatically when the displayed countdown changes. Fades out when hovered (click-through when invisible).
-- **Tray icon** with session percentage (green/yellow/red)
+- **Tray icon** — two concentric progress rings (outer = `5h` session, inner = `7d` weekly), color-coded green → yellow → red. Dims to the last-known reading when offline.
 - **Tooltip** with session %, weekly % (with pace), and reset timers
-- **Right-click** menu: Details, Refresh, Copy Raw JSON, Exit
+- **Right-click** menu: Details, Refresh, Copy Status Text, Open Log Folder, Start with Windows, Check for Updates, About, Exit
 - **Popup window** — opens on startup and on double-click, always on top. Three progress bars: `5h` session, `7d` weekly, `extra usage` monthly — with colored pace markers and subtitles (e.g. Reset: 1h 23m | +12% ahead)
 
 <img width="402" height="235" alt="Tray Usage Monitor" src="https://github.com/user-attachments/assets/0479ef8d-bcb8-445e-9b56-df71c411852c" />
 
 If the taskbar is unavailable (unsupported shell), the app falls back gracefully to tray icon + popup only.
+
+## Extras
+
+- **Start with Windows** — toggle it in the tray menu (no installer; just a per-user registry Run entry).
+- **Update notifications** — checks GitHub Releases about once a day and tells you when a newer version is out.
+- **Sleep & offline resilient** — recovers within seconds of the connection returning after standby or a network drop, and keeps showing your last-known usage (dimmed, with an offline dot) while offline instead of an error.
 
 ## How it actually works (technically)
 
