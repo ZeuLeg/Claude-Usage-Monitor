@@ -688,7 +688,13 @@ public sealed class MainForm : Form
         base.OnFormClosing(e);
     }
 
-    protected override void SetVisibleCore(bool value) => base.SetVisibleCore(false);
+    protected override void SetVisibleCore(bool value)
+    {
+        // Force HWND creation so WndProc receives broadcast messages
+        // (TaskbarCreated, theme change) even though we stay invisible.
+        if (!IsHandleCreated) CreateHandle();
+        base.SetVisibleCore(false);
+    }
 
     protected override void Dispose(bool disposing)
     {
