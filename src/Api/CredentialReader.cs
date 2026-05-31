@@ -5,13 +5,12 @@ using System.Text.Json;
 namespace ClaudeUsageMonitor;
 
 /// <summary>
-/// Reads the OAuth Access Token used to call the usage API.
+/// Reads the OAuth credentials used to call the usage API.
 ///
-/// Source order:
-///   0. CLAUDE_CODE_OAUTH_TOKEN env var — a long-lived token from `claude setup-token`
-///      (no daily expiry; the officially supported headless path)
+/// Source order (highest priority first):
 ///   1. Windows Credential Manager: "Claude Code-credentials"
 ///   2. %USERPROFILE%\.claude\.credentials.json (+ HOMEDRIVE/HOMEPATH fallbacks)
+///   3. CLAUDE_CODE_OAUTH_TOKEN env var (last resort — likely lacks user:profile scope)
 /// </summary>
 public static class CredentialReader
 {
@@ -19,8 +18,8 @@ public static class CredentialReader
     private const string FileName = ".credentials.json";
     private const string DirName = ".claude";
 
-    // The token source is logged only when it changes, to keep the 2-minute poll log quiet.
     private static string? _lastLoggedSource;
+    private static bool _envVarWarned;
 
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool CredReadW(string target, int type, int flags, out IntPtr credential);
@@ -45,23 +44,20 @@ public static class CredentialReader
         public string UserName;
     }
 
-    /// <summary>Reads the OAuth Access Token, or null if none can be found.</summary>
-    public static string? GetAccessToken()
-    {
-        // 0. Explicit long-lived token (claude setup-token) — official, survives daily expiry.
-        var envToken = Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN");
-        if (!string.IsNullOrWhiteSpace(envToken))
-        {
-            LogSource("CLAUDE_CODE_OAUTH_TOKEN env var");
-            return envToken.Trim();
-        }
+    public record Credentials(string AccessToken, DateTime ExpiresAt);
 
+    /// <summary>
+    /// Returns the OAuth credentials (token + expiry), or null if none can be found.
+    /// Reads from Credential Manager → credentials file → env var (last resort).
+    /// </summary>
+    public static Credentials? ReadCredentials()
+    {
         // 1. Windows Credential Manager
         try
         {
             var json = ReadFromCredentialManager();
-            var token = json != null ? ExtractAccessToken(json) : null;
-            if (token != null) { LogSource("Credential Manager"); return token; }
+            var creds = json != null ? ExtractCredentials(json) : null;
+            if (creds != null) { LogSource("Credential Manager"); return creds; }
         }
         catch (Exception ex)
         {
@@ -78,8 +74,8 @@ public static class CredentialReader
                 var json = File.ReadAllText(path, Encoding.UTF8);
                 if (!json.Contains("claudeAiOauth")) continue;
 
-                var token = ExtractAccessToken(json);
-                if (token != null) { LogSource($"file: {path}"); return token; }
+                var creds = ExtractCredentials(json);
+                if (creds != null) { LogSource($"file: {path}"); return creds; }
             }
             catch (Exception ex)
             {
@@ -87,11 +83,27 @@ public static class CredentialReader
             }
         }
 
+        // 3. Env var — last resort; likely lacks user:profile scope required by usage endpoint
+        var envToken = Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN");
+        if (!string.IsNullOrWhiteSpace(envToken))
+        {
+            if (!_envVarWarned)
+            {
+                _envVarWarned = true;
+                Logger.Warn("[CredentialReader] Using CLAUDE_CODE_OAUTH_TOKEN env var — this token likely lacks user:profile scope and may return HTTP 403. Remove it and use 'claude login' instead.");
+            }
+            LogSource("CLAUDE_CODE_OAUTH_TOKEN env var");
+            // Env var has no expiry info; treat as already expired so refresh is attempted
+            return new Credentials(envToken.Trim(), DateTime.MinValue);
+        }
+
         LogSource("none");
         return null;
     }
 
-    /// <summary>Logs the token source on change only, so steady-state polling stays silent.</summary>
+    /// <summary>Reads the OAuth Access Token, or null if none can be found.</summary>
+    public static string? GetAccessToken() => ReadCredentials()?.AccessToken;
+
     private static void LogSource(string source)
     {
         if (source == _lastLoggedSource) return;
@@ -102,7 +114,6 @@ public static class CredentialReader
             Logger.Info($"[CredentialReader] Token source: {source}");
     }
 
-    /// <summary>All candidate paths for the credentials file.</summary>
     private static IEnumerable<string> GetCredentialFilePaths()
     {
         var userProfile = Environment.GetEnvironmentVariable("USERPROFILE");
@@ -149,22 +160,34 @@ public static class CredentialReader
         }
     }
 
-    private static string? ExtractAccessToken(string json)
+    private static Credentials? ExtractCredentials(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("claudeAiOauth", out var oauth) &&
-                oauth.TryGetProperty("accessToken", out var token))
+            if (!doc.RootElement.TryGetProperty("claudeAiOauth", out var oauth))
+                return null;
+
+            if (!oauth.TryGetProperty("accessToken", out var tokenProp))
+                return null;
+
+            var token = tokenProp.GetString();
+            if (string.IsNullOrWhiteSpace(token)) return null;
+
+            var expiresAt = DateTime.MaxValue;
+            if (oauth.TryGetProperty("expiresAt", out var expProp) &&
+                expProp.ValueKind == JsonValueKind.Number &&
+                expProp.TryGetInt64(out var epochMs))
             {
-                var val = token.GetString();
-                if (!string.IsNullOrWhiteSpace(val)) return val;
+                expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(epochMs).UtcDateTime;
             }
+
+            return new Credentials(token, expiresAt);
         }
         catch (Exception ex)
         {
             Logger.Warn($"[CredentialReader] JSON parse error: {ex.Message}");
+            return null;
         }
-        return null;
     }
 }

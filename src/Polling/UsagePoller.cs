@@ -25,6 +25,7 @@ internal sealed class UsagePoller : IDisposable
 
     private readonly SemaphoreSlim _pollGuard = new(1, 1);
     private readonly UsageFetcher _fetcher;
+    private readonly TokenProvider _tokenProvider;
     private readonly System.Windows.Forms.Timer _pollTimer;
     private readonly Control _invoker;
     private readonly CancellationTokenSource _cts = new();
@@ -45,6 +46,7 @@ internal sealed class UsagePoller : IDisposable
     {
         _invoker = invoker;
         _fetcher = new UsageFetcher();
+        _tokenProvider = new TokenProvider();
 
         _pollTimer = new System.Windows.Forms.Timer { Interval = PollIntervalMs };
         _pollTimer.Tick += (_, _) => FireAndForget(PollAsync);
@@ -95,18 +97,24 @@ internal sealed class UsagePoller : IDisposable
 
         try
         {
-            var token = CredentialReader.GetAccessToken();
+            var (token, hasCredentials) = await _tokenProvider.GetValidAccessTokenAsync(_cts.Token);
             if (token == null)
             {
-                // Diagnostik: Warum kein Token?
-                var userProfile = Environment.GetEnvironmentVariable("USERPROFILE") ?? "?";
-                var credFile = Path.Combine(userProfile, ".claude", ".credentials.json");
+                if (!hasCredentials)
+                {
 #if DEBUG
-                System.Diagnostics.Debug.WriteLine($"[Poll] Credentials not found. File: {credFile}, Exists: {File.Exists(credFile)}");
+                    var userProfile = Environment.GetEnvironmentVariable("USERPROFILE") ?? "?";
+                    var credFile = Path.Combine(userProfile, ".claude", ".credentials.json");
+                    System.Diagnostics.Debug.WriteLine($"[Poll] Credentials not found. File: {credFile}, Exists: {File.Exists(credFile)}");
 #endif
-                var diagMsg = "No OAuth token found.\nPlease run 'claude login'.";
-
-                TokenMissing?.Invoke(diagMsg);
+                    TokenMissing?.Invoke("No OAuth token found.\nPlease run 'claude login'.");
+                }
+                else
+                {
+                    // Credentials exist but refresh failed — ask user to login
+                    Logger.Error("Token refresh failed; credentials may be revoked.");
+                    AuthExpired?.Invoke();
+                }
                 return;
             }
 
@@ -129,12 +137,39 @@ internal sealed class UsagePoller : IDisposable
         catch (OperationCanceledException) { }
         catch (UnauthorizedAccessException)
         {
-            // Keep retrying on backoff (don't stop the timer): once the user re-runs
-            // 'claude login', the next poll picks up the fresh token automatically.
+            // Reactive refresh: token may have expired between the expiry check and the HTTP call
+            Logger.Warn("OAuth 401/403 received — attempting reactive token refresh.");
+            var freshToken = await _tokenProvider.ForceRefreshAndGetAsync(_cts.Token);
+            if (freshToken != null)
+            {
+                try
+                {
+                    var data = await _fetcher.FetchAsync(freshToken, _cts.Token);
+                    data = UsageData.MergeCarryForward(_lastData, data);
+                    _lastData = data;
+                    _errors = 0;
+                    _backoffMs = PollIntervalMs;
+                    _pollTimer.Interval = PollIntervalMs;
+                    ScheduleResetPoll(data);
+                    Updated?.Invoke(data);
+                    Logger.Info("Reactive refresh succeeded — poll recovered.");
+                    return;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    Logger.Error("Reactive refresh succeeded but fetch still got 401/403.");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"Reactive refresh: fetch after token refresh failed: {ex.Message}");
+                }
+            }
+
+            // Refresh failed or second fetch still unauthorized — notify user
             _errors++;
             _backoffMs = NextBackoff(_backoffMs);
             _pollTimer.Interval = _backoffMs;
-            Logger.Error("OAuth token expired or invalid.");
+            Logger.Error("OAuth token expired or invalid; refresh did not help. Run 'claude login'.");
             AuthExpired?.Invoke();
         }
         catch (Exception ex)
