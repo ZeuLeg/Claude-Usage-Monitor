@@ -77,14 +77,25 @@ internal sealed class TokenRefresher
                 CreateNoWindow = true,
             };
             using var proc = Process.Start(psi)!;
-            var readTask = proc.StandardOutput.ReadToEndAsync(ct);
-            if (!proc.WaitForExit(timeoutMs))
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeoutMs);
+
+            // Drain both pipes so the child process never blocks on a full buffer
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var stderrTask = proc.StandardError.ReadToEndAsync(timeoutCts.Token);
+
+            try
             {
-                try { proc.Kill(); } catch { }
+                await proc.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
                 Logger.Warn($"[TokenRefresher] 'claude {arguments}' timed out after {timeoutMs / 1000}s.");
                 return string.Empty;
             }
-            return await readTask;
+
+            return await stdoutTask;
         }
         catch (Exception ex)
         {

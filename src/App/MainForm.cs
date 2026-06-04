@@ -93,6 +93,8 @@ public sealed class MainForm : Form
         {
             startup.Stop();
             startup.Dispose();
+            // Warm up ClaudeCodeInfo off the UI thread so the first poll doesn't block
+            _ = Task.Run(() => _ = ClaudeCodeInfo.Version);
             await _poller.PollAsync();
             _poller.Start();
             _taskbarWidget = new TaskbarWidget(_poller.LastData);
