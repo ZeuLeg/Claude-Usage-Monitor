@@ -135,14 +135,50 @@ public sealed class MainForm : Form
         };
         m.Items.Add(raw);
 
-        var openLog = new ToolStripMenuItem("Open Log Folder");
-        openLog.Click += (_, _) =>
+        var diag = new ToolStripMenuItem("Diagnostics");
+
+        // Log level radio group
+        var logLevels = new[] { LogLevel.Error, LogLevel.Warn, LogLevel.Info, LogLevel.Debug };
+        foreach (var level in logLevels)
+        {
+            var item = new ToolStripMenuItem(level.ToString())
+            {
+                Checked = Logger.MinLevel == level,
+                CheckOnClick = false,
+            };
+            item.Click += (_, _) =>
+            {
+                Logger.MinLevel = level;
+                Settings.Current.LogLevel = level.ToString();
+                Settings.Current.Save();
+                // Update all log level items' Checked state
+                foreach (ToolStripMenuItem li in diag.DropDownItems)
+                {
+                    if (li.Tag is LogLevel lv)
+                        li.Checked = lv == level;
+                }
+            };
+            item.Tag = level;
+            diag.DropDownItems.Add(item);
+        }
+
+        diag.DropDownItems.Add(new ToolStripSeparator());
+
+        var openLogFolder = new ToolStripMenuItem("Open Log Folder");
+        openLogFolder.Click += (_, _) =>
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = Logger.LogDirectory,
-                UseShellExecute = true,
-            });
-        m.Items.Add(openLog);
+                FileName = "explorer.exe",
+                Arguments = Logger.LogDirectory,
+                UseShellExecute = false,
+            })?.Dispose();
+        diag.DropDownItems.Add(openLogFolder);
+
+        var copyDiag = new ToolStripMenuItem("Copy Diagnostics");
+        copyDiag.Click += (_, _) => Clipboard.SetText(Diagnostics.BuildReport());
+        diag.DropDownItems.Add(copyDiag);
+
+        m.Items.Add(diag);
 
         var autostart = new ToolStripMenuItem("Start with Windows")
         {
