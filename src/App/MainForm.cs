@@ -49,7 +49,10 @@ public sealed class MainForm : Form
         _trayIcon.Visible = true;
 
         _notifier = new Notifier(_trayIcon);
-        _evaluator = new NotificationEvaluator();
+        _evaluator = new NotificationEvaluator
+        {
+            HighUsageThreshold = Settings.Current.HighUsageThreshold,
+        };
 
         _poller.Updated += data =>
         {
@@ -197,7 +200,11 @@ public sealed class MainForm : Form
         m.Items.Add(new ToolStripSeparator());
 
         var notifications = new ToolStripMenuItem("Notifications…");
-        notifications.Click += (_, _) => NotificationsDialog.Show(_notifier);
+        notifications.Click += (_, _) =>
+        {
+            NotificationsDialog.Show(_notifier);
+            _evaluator.HighUsageThreshold = Settings.Current.HighUsageThreshold;
+        };
         m.Items.Add(notifications);
 
         var about = new ToolStripMenuItem("About");
