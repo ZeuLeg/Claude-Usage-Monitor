@@ -28,6 +28,8 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Settings.Load();
+        if (Enum.TryParse<LogLevel>(Settings.Current.LogLevel, ignoreCase: true, out var lvl))
+            Logger.MinLevel = lvl;
         ShowInTaskbar = false;
         WindowState = FormWindowState.Minimized;
         FormBorderStyle = FormBorderStyle.None;

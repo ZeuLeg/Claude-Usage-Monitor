@@ -25,6 +25,7 @@ internal class Settings
         }
     }
 
+    public string LogLevel { get; set; } = "Info";
     public string NtfyServer { get; set; } = "https://ntfy.sh";
     public string NtfyTopic { get; set; } = "";
     public string ShellCommand { get; set; } = "";
