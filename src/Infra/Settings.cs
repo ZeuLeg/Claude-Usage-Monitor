@@ -32,6 +32,7 @@ internal class Settings
     public bool NotifyLimitReached { get; set; } = true;
     public bool NotifyReset { get; set; } = true;
     public bool NotifyHighUsage { get; set; } = true;
+    public int HighUsageThreshold { get; set; } = 90;
 
     public static void Load()
     {
