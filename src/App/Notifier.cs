@@ -24,6 +24,11 @@ internal sealed class Notifier
 
         if (!enabled) return;
 
+        var channels = new StringBuilder("balloon");
+        if (!string.IsNullOrEmpty(Settings.Current.NtfyTopic)) channels.Append("+ntfy");
+        if (!string.IsNullOrEmpty(Settings.Current.ShellCommand)) channels.Append("+shell");
+        Logger.Info($"Notified {ev.Kind} {ev.Quota} via {channels}");
+
         var message = ev.Kind switch
         {
             NotifyKind.HighUsage    => $"{ev.Quota} at {ev.Percent:0}% — resets in {ev.ResetText}.",
