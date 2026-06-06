@@ -152,7 +152,7 @@ public sealed class MainForm : Form
                 Settings.Current.LogLevel = level.ToString();
                 Settings.Current.Save();
                 // Update all log level items' Checked state
-                foreach (ToolStripMenuItem li in diag.DropDownItems)
+                foreach (var li in diag.DropDownItems.OfType<ToolStripMenuItem>())
                 {
                     if (li.Tag is LogLevel lv)
                         li.Checked = lv == level;
