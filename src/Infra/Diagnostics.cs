@@ -22,7 +22,6 @@ internal static class Diagnostics
         sb.AppendLine("[Settings]");
         sb.AppendLine($"NtfyServer: {s.NtfyServer}");
         sb.AppendLine($"NtfyTopic: {(string.IsNullOrEmpty(s.NtfyTopic) ? "(not set)" : "***")}");
-        sb.AppendLine($"ShellCommand: {(string.IsNullOrEmpty(s.ShellCommand) ? "(not set)" : "***")}");
         sb.AppendLine($"NotifyHighUsage: {s.NotifyHighUsage}");
         sb.AppendLine($"NotifyLimitReached: {s.NotifyLimitReached}");
         sb.AppendLine($"NotifyReset: {s.NotifyReset}");

@@ -28,7 +28,6 @@ internal class Settings
     public string LogLevel { get; set; } = "Info";
     public string NtfyServer { get; set; } = "https://ntfy.sh";
     public string NtfyTopic { get; set; } = "";
-    public string ShellCommand { get; set; } = "";
     public bool NotifyLimitReached { get; set; } = true;
     public bool NotifyReset { get; set; } = true;
     public bool NotifyHighUsage { get; set; } = true;

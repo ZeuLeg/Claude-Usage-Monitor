@@ -17,7 +17,7 @@ internal static class NotificationsDialog
             BackColor = Bg, ForeColor = Color.White,
             Font = new Font("Segoe UI", 10f), TopMost = true,
             ShowInTaskbar = false,
-            ClientSize = new Size(440, 432),
+            ClientSize = new Size(440, 338),
             StartPosition = FormStartPosition.CenterScreen,
         };
 
@@ -33,28 +33,16 @@ internal static class NotificationsDialog
         dlg.Controls.Add(ntfyServerBox);
 
         dlg.Controls.Add(HelpText(
-            "Subscribe to this topic in the ntfy app to get alerts on your phone.",
+            "Subscribe to this topic in the ntfy app to get phone alerts.",
             28, 102, 400));
 
-        // ── CUSTOM COMMAND section ──────────────────────
-        dlg.Controls.Add(SectionHeader("CUSTOM COMMAND (OPTIONAL)", 138));
-
-        dlg.Controls.Add(FieldLabel("command", 168));
-        var shellBox = Field(130, 165, 290, Settings.Current.ShellCommand);
-        dlg.Controls.Add(shellBox);
-
-        dlg.Controls.Add(HelpText(
-            "Runs when an alert fires — for advanced integrations. " +
-            "Use {message}, {event}, {percent}, {quota}. Leave blank to skip.",
-            28, 194, 400));
-
         // ── NOTIFY ME WHEN section ──────────────────────
-        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 244));
+        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 150));
 
         var chkHighUsage = new CheckBox
         {
             Text = "Usage reaches",
-            Location = new Point(28, 276),
+            Location = new Point(28, 182),
             Checked = Settings.Current.NotifyHighUsage,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -64,7 +52,7 @@ internal static class NotificationsDialog
 
         var slider = new Slider
         {
-            Location = new Point(150, 274),
+            Location = new Point(150, 180),
             Width = 190,
             Minimum = 50,
             Maximum = 99,
@@ -76,7 +64,7 @@ internal static class NotificationsDialog
         var pctLabel = new Label
         {
             Text = $"{slider.Value}%",
-            Location = new Point(350, 277),
+            Location = new Point(350, 183),
             ForeColor = Accent,
             Font = new Font("Segoe UI", 10f, FontStyle.Bold),
             AutoSize = true,
@@ -94,7 +82,7 @@ internal static class NotificationsDialog
         var chkLimitReached = new CheckBox
         {
             Text = "Limit reached (~100%)",
-            Location = new Point(28, 312),
+            Location = new Point(28, 218),
             Checked = Settings.Current.NotifyLimitReached,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -105,7 +93,7 @@ internal static class NotificationsDialog
         var chkReset = new CheckBox
         {
             Text = "Quota resets",
-            Location = new Point(28, 342),
+            Location = new Point(28, 248),
             Checked = Settings.Current.NotifyReset,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -114,7 +102,7 @@ internal static class NotificationsDialog
         dlg.Controls.Add(chkReset);
 
         // ── Footer buttons ──────────────────────────────
-        var btnTest = FooterButton("Test Notification", 20, 388, 140, FieldBg, Color.White);
+        var btnTest = FooterButton("Test Notification", 20, 294, 140, FieldBg, Color.White);
         btnTest.Click += async (_, _) =>
         {
             try { await notifier.SendTestAsync(); }
@@ -122,12 +110,11 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(btnTest);
 
-        var btnSave = FooterButton("Save", 250, 388, 80, Accent, Color.FromArgb(15, 15, 15));
+        var btnSave = FooterButton("Save", 250, 294, 80, Accent, Color.FromArgb(15, 15, 15));
         btnSave.Click += (_, _) =>
         {
             Settings.Current.NtfyTopic = ntfyTopicBox.Text;
             Settings.Current.NtfyServer = ntfyServerBox.Text;
-            Settings.Current.ShellCommand = shellBox.Text;
             Settings.Current.NotifyHighUsage = chkHighUsage.Checked;
             Settings.Current.NotifyLimitReached = chkLimitReached.Checked;
             Settings.Current.NotifyReset = chkReset.Checked;
@@ -137,7 +124,7 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(btnSave);
 
-        var btnCancel = FooterButton("Cancel", 340, 388, 80, FieldBg, Color.White);
+        var btnCancel = FooterButton("Cancel", 340, 294, 80, FieldBg, Color.White);
         btnCancel.Click += (_, _) => dlg.Close();
         dlg.Controls.Add(btnCancel);
 

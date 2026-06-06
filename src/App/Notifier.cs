@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
 
@@ -26,7 +25,6 @@ internal sealed class Notifier
 
         var channels = new StringBuilder("balloon");
         if (!string.IsNullOrEmpty(Settings.Current.NtfyTopic)) channels.Append("+ntfy");
-        if (!string.IsNullOrEmpty(Settings.Current.ShellCommand)) channels.Append("+shell");
         Logger.Info($"Notified {ev.Kind} {ev.Quota} via {channels}");
 
         var message = ev.Kind switch
@@ -42,9 +40,6 @@ internal sealed class Notifier
 
         if (!string.IsNullOrEmpty(Settings.Current.NtfyTopic))
             _ = SendNtfyAsync(message);
-
-        if (!string.IsNullOrEmpty(Settings.Current.ShellCommand))
-            RunShell(message, ev);
     }
 
     public Task SendTestAsync()
@@ -69,31 +64,6 @@ internal sealed class Notifier
         catch (Exception ex)
         {
             Logger.Warn($"[Notifier] ntfy POST failed: {ex.Message}");
-        }
-    }
-
-    private static void RunShell(string message, NotifyEvent ev)
-    {
-        try
-        {
-            var substituted = Settings.Current.ShellCommand
-                .Replace("{message}", message)
-                .Replace("{event}", ev.Kind.ToString())
-                .Replace("{percent}", ev.Percent.ToString("0"))
-                .Replace("{quota}", ev.Quota);
-
-            var psi = new ProcessStartInfo("cmd.exe", $"/c {substituted}")
-            {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
-            };
-            Process.Start(psi)?.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Logger.Warn($"[Notifier] Shell command failed: {ex.Message}");
         }
     }
 }
