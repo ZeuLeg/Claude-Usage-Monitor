@@ -24,6 +24,7 @@ internal sealed class Slider : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint
                | ControlStyles.OptimizedDoubleBuffer
                | ControlStyles.ResizeRedraw
+               | ControlStyles.SupportsTransparentBackColor
                | ControlStyles.UserPaint, true);
         Height = 24;
         TabStop = true;
