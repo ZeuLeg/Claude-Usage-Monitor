@@ -221,7 +221,7 @@ public sealed class MainForm : Form
     {
         try { await action(); }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Unhandled] {ex}"); }
+        catch (Exception ex) { Logger.Error($"[FireAndForget] {ex}"); }
     }
 
     // ═══════════════════════════════════════
