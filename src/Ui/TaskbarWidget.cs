@@ -338,8 +338,11 @@ internal sealed class TaskbarWidget : IDisposable
             float hi = (float)Math.Clamp(expectedPct + 5, 0, 100);
             float bandX = x + barW * lo / 100f;
             float bandW = barW * (hi - lo) / 100f;
+            var bandState = g.Save();
+            g.SetClip(new RectangleF(bandX, y, bandW, BarH), System.Drawing.Drawing2D.CombineMode.Intersect);
             using (var bandBrush = new SolidBrush(Color.FromArgb(130, 150, 150, 150)))
-                g.FillRectangle(bandBrush, bandX, y, bandW, BarH);
+                g.FillPath(bandBrush, path);
+            g.Restore(bandState);
         }
 
         // Fill (drawn on top of band so band disappears as usage exceeds expected)
