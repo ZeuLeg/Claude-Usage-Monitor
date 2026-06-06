@@ -197,19 +197,19 @@ internal sealed class TaskbarWidget : IDisposable
         int effectiveBarW = BarW;
 
         DrawRow(g, Row1Y, "5h", data.SessionPercent, data.SessionResetIn, data.SessionPaceState,
-                textClr, trackClr, effectiveBarW);
+                textClr, trackClr, effectiveBarW, data.SessionExpectedPercent);
 
         if (data.HasWeekly)
             DrawRow(g, Row2Y, "7d", data.WeeklyPercent, data.WeeklyResetIn, data.WeeklyPaceState,
-                    textClr, trackClr, effectiveBarW);
+                    textClr, trackClr, effectiveBarW, data.WeeklyExpectedPercent);
         else
             DrawRow(g, Row2Y, "7d", -1, TimeSpan.Zero, PaceState.OnPace,
-                    textClr, trackClr, effectiveBarW);
+                    textClr, trackClr, effectiveBarW, 0);
     }
 
     private static void DrawRow(Graphics g, int rowY, string label,
                                 double pct, TimeSpan resetIn, PaceState pace,
-                                Color textClr, Color trackClr, int barW)
+                                Color textClr, Color trackClr, int barW, double expectedPct)
     {
         int contentX = PadL;
 
@@ -228,7 +228,7 @@ internal sealed class TaskbarWidget : IDisposable
 
         if (pct >= 0)
         {
-            DrawSolidBar(g, barX, rowY, pct, trackClr, barW);
+            DrawSolidBar(g, barX, rowY, pct, trackClr, barW, expectedPct);
 
             int textX = barX + barW + BarTextGap;
 
@@ -273,7 +273,7 @@ internal sealed class TaskbarWidget : IDisposable
         else
         {
             // No data — draw empty bar + dashes
-            DrawSolidBar(g, barX, rowY, 0, trackClr, barW);
+            DrawSolidBar(g, barX, rowY, 0, trackClr, barW, 0);
             int textX = barX + barW + BarTextGap;
             using var textFont  = new Font("Segoe UI", 8f);
             using var textBrush = new SolidBrush(Color.FromArgb(60, textClr));
@@ -322,7 +322,7 @@ internal sealed class TaskbarWidget : IDisposable
         _                => FillWarn,
     };
 
-    private static void DrawSolidBar(Graphics g, int x, int y, double pct, Color trackClr, int barW)
+    private static void DrawSolidBar(Graphics g, int x, int y, double pct, Color trackClr, int barW, double expectedPct)
     {
         var barRect = new RectangleF(x, y, barW, BarH);
 
@@ -331,7 +331,18 @@ internal sealed class TaskbarWidget : IDisposable
         using (var trackBrush = new SolidBrush(trackClr))
             g.FillPath(trackBrush, path);
 
-        // Fill
+        // Grey on-pace band (±5% around expected usage)
+        if (expectedPct > 0)
+        {
+            float lo = (float)Math.Clamp(expectedPct - 5, 0, 100);
+            float hi = (float)Math.Clamp(expectedPct + 5, 0, 100);
+            float bandX = x + barW * lo / 100f;
+            float bandW = barW * (hi - lo) / 100f;
+            using (var bandBrush = new SolidBrush(Color.FromArgb(130, 150, 150, 150)))
+                g.FillRectangle(bandBrush, bandX, y, bandW, BarH);
+        }
+
+        // Fill (drawn on top of band so band disappears as usage exceeds expected)
         float fillW = barW * (float)Math.Clamp(pct, 0, 100) / 100f;
         if (fillW > 0)
         {
