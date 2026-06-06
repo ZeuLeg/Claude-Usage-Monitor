@@ -4,7 +4,7 @@ internal static class NotificationsDialog
 {
     public static void Show(Notifier notifier)
     {
-        var dlg = new Form
+        using var dlg = new Form
         {
             Text = "Notifications — Claude Usage Monitor",
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
