@@ -29,6 +29,8 @@ public sealed class NotificationEvaluator
 
     private sealed class QuotaState
     {
+        private static readonly TimeSpan ResetTolerance = TimeSpan.FromMinutes(1);
+
         private bool _warned90;
         private bool _reached100;
         private DateTime? _lastResetsAt;
@@ -40,16 +42,17 @@ public sealed class NotificationEvaluator
             {
                 _lastResetsAt = resetsAt ?? DateTime.MinValue;
             }
-            else if (resetsAt.HasValue && resetsAt.Value > _lastResetsAt.Value)
+            else if (resetsAt.HasValue)
             {
-                yield return new NotifyEvent(NotifyKind.Reset, quotaLabel, pct, resetText);
-                _warned90 = false;
-                _reached100 = false;
-                _lastResetsAt = resetsAt;
-            }
-            else
-            {
-                _lastResetsAt = resetsAt;
+                var delta = resetsAt.Value - _lastResetsAt.Value;
+                if (delta > ResetTolerance)
+                {
+                    yield return new NotifyEvent(NotifyKind.Reset, quotaLabel, pct, resetText);
+                    _warned90 = false;
+                    _reached100 = false;
+                }
+                if (delta > TimeSpan.Zero)
+                    _lastResetsAt = resetsAt;   // never lower the baseline on jitter
             }
 
             if (pct >= 99.5)
