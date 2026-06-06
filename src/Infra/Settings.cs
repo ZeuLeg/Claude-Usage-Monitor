@@ -8,10 +8,22 @@ internal class Settings
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "ClaudeUsageMonitor", "settings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+    };
 
+    private static readonly object _lock = new();
     private static Settings? _current;
-    public static Settings Current => _current ??= CreateFromDisk();
+
+    public static Settings Current
+    {
+        get
+        {
+            lock (_lock) { return _current ??= CreateFromDisk(); }
+        }
+    }
 
     public string NtfyServer { get; set; } = "https://ntfy.sh";
     public string NtfyTopic { get; set; } = "";
@@ -22,7 +34,7 @@ internal class Settings
 
     public static void Load()
     {
-        _current = CreateFromDisk();
+        lock (_lock) { _current = CreateFromDisk(); }
     }
 
     private static Settings CreateFromDisk()
