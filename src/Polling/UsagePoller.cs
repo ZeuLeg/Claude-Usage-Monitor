@@ -31,6 +31,7 @@ internal sealed class UsagePoller : IDisposable
     private readonly CancellationTokenSource _cts = new();
 
     private UsageData? _lastData;
+    private string? _lastPollSignature;
     private int _errors;
     private int _backoffMs = PollIntervalMs;
     private System.Windows.Forms.Timer? _resetTimer;
@@ -122,10 +123,20 @@ internal sealed class UsagePoller : IDisposable
             data = UsageData.MergeCarryForward(_lastData, data);
             if (data.WeeklyStale)
                 Logger.Warn("seven_day missing from API response; carrying forward previous weekly data.");
-            Logger.Info($"Poll OK — session={data.SessionPercent:0.0}% resets@{data.SessionResetsAt:u}, " +
-                        $"weekly={data.WeeklyPercent:0.0}% hasWeekly={data.HasWeekly} stale={data.WeeklyStale} " +
-                        $"resets@{data.WeeklyResetsAt:u}, " +
-                        $"extraEnabled={data.ExtraEnabled} extra=${data.ExtraUsedDollars:F2}/${data.ExtraLimitDollars:F2}");
+            var sig = $"{data.SessionPercent:0}|{data.HasWeekly}|{data.WeeklyPercent:0}|{data.ExtraEnabled}";
+            var pollMsg = $"Poll OK — session={data.SessionPercent:0.0}% resets@{data.SessionResetsAt:u}, " +
+                          $"weekly={data.WeeklyPercent:0.0}% hasWeekly={data.HasWeekly} stale={data.WeeklyStale} " +
+                          $"resets@{data.WeeklyResetsAt:u}, " +
+                          $"extraEnabled={data.ExtraEnabled} extra=${data.ExtraUsedDollars:F2}/${data.ExtraLimitDollars:F2}";
+            if (sig != _lastPollSignature)
+            {
+                Logger.Info(pollMsg);
+                _lastPollSignature = sig;
+            }
+            else
+            {
+                Logger.Debug(pollMsg);
+            }
             _lastData = data;
             _errors = 0;
             _backoffMs = PollIntervalMs;
