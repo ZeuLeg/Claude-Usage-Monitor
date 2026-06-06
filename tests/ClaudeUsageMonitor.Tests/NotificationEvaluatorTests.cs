@@ -191,4 +191,30 @@ public class NotificationEvaluatorTests
         var second = ev.Evaluate(new UsageData { SessionPercent = 5, SessionResetsAt = t }).ToList();
         Assert.Contains(second, e => e.Kind == NotifyKind.Reset);
     }
+
+    // Regression: API resets_at 1-second jitter must not fire Reset
+    [Fact]
+    public void Reset_NotFired_OnSubMinuteJitter()
+    {
+        var ev = new NotificationEvaluator();
+        var t0 = new DateTime(2099, 3, 1, 2, 0, 0, DateTimeKind.Utc);
+        var t1 = t0.AddSeconds(1);  // jitter forward
+        var t2 = t0;                // jitter back
+
+        // First poll: guard (no Reset)
+        ev.Evaluate(Session(50, t0)).ToList();
+
+        // Jitter forward by 1 second — must NOT fire Reset (delta = 1s < 1 min)
+        var second = ev.Evaluate(Session(55, t1)).ToList();
+        Assert.DoesNotContain(second, e => e.Kind == NotifyKind.Reset);
+
+        // Jitter back — must NOT fire Reset
+        var third = ev.Evaluate(Session(60, t2)).ToList();
+        Assert.DoesNotContain(third, e => e.Kind == NotifyKind.Reset);
+
+        // Real reset: hours later — MUST fire Reset
+        var t3 = t0.AddHours(5);
+        var fourth = ev.Evaluate(Session(5, t3)).ToList();
+        Assert.Contains(fourth, e => e.Kind == NotifyKind.Reset);
+    }
 }
