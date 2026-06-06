@@ -54,8 +54,10 @@ internal sealed class Notifier
         try
         {
             var url = $"{Settings.Current.NtfyServer}/{Settings.Current.NtfyTopic}";
-            using var content = new StringContent(message, Encoding.UTF8);
-            using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(message, Encoding.UTF8),
+            };
             request.Headers.Add("Title", "Claude Usage Monitor");
             await _http.SendAsync(request);
         }
