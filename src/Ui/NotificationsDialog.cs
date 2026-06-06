@@ -2,6 +2,11 @@ namespace ClaudeUsageMonitor;
 
 internal static class NotificationsDialog
 {
+    private static readonly Color Accent  = Color.FromArgb(56, 189, 248);
+    private static readonly Color Bg       = Color.FromArgb(24, 24, 27);
+    private static readonly Color FieldBg  = Color.FromArgb(39, 39, 42);
+    private static readonly Color Muted    = Color.FromArgb(140, 140, 150);
+
     public static void Show(Notifier notifier)
     {
         using var dlg = new Form
@@ -9,80 +14,47 @@ internal static class NotificationsDialog
             Text = "Notifications — Claude Usage Monitor",
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
             MaximizeBox = false, MinimizeBox = false,
-            BackColor = Color.FromArgb(24, 24, 27), ForeColor = Color.White,
+            BackColor = Bg, ForeColor = Color.White,
             Font = new Font("Segoe UI", 10f), TopMost = true,
             ShowInTaskbar = false,
-            ClientSize = new Size(420, 340),
+            ClientSize = new Size(440, 432),
             StartPosition = FormStartPosition.CenterScreen,
         };
 
-        dlg.Controls.Add(new Label
-        {
-            Text = "ntfy Topic:",
-            Location = new Point(20, 18),
-            AutoSize = true,
-        });
+        // ── PHONE section ───────────────────────────────
+        dlg.Controls.Add(SectionHeader("PHONE (OPTIONAL)", 16));
 
-        var ntfyTopicBox = new TextBox
-        {
-            Location = new Point(130, 15),
-            Width = 270,
-            Text = Settings.Current.NtfyTopic,
-        };
+        dlg.Controls.Add(FieldLabel("ntfy topic", 46));
+        var ntfyTopicBox = Field(130, 43, 290, Settings.Current.NtfyTopic);
         dlg.Controls.Add(ntfyTopicBox);
 
-        dlg.Controls.Add(new Label
-        {
-            Text = "ntfy Server:",
-            Location = new Point(20, 50),
-            AutoSize = true,
-        });
-
-        var ntfyServerBox = new TextBox
-        {
-            Location = new Point(130, 47),
-            Width = 270,
-            Text = Settings.Current.NtfyServer,
-        };
+        dlg.Controls.Add(FieldLabel("ntfy server", 76));
+        var ntfyServerBox = Field(130, 73, 290, Settings.Current.NtfyServer);
         dlg.Controls.Add(ntfyServerBox);
 
-        dlg.Controls.Add(new Label
-        {
-            Text = "Subscribe to the same topic in the ntfy app to receive notifications on your phone.",
-            ForeColor = Color.FromArgb(140, 140, 150),
-            Font = new Font("Segoe UI", 8.5f),
-            Location = new Point(20, 80),
-            Size = new Size(380, 32),
-        });
+        dlg.Controls.Add(HelpText(
+            "Subscribe to this topic in the ntfy app to get alerts on your phone.",
+            28, 102, 400));
 
-        dlg.Controls.Add(new Label
-        {
-            Text = "Shell Command:",
-            Location = new Point(20, 120),
-            AutoSize = true,
-        });
+        // ── CUSTOM COMMAND section ──────────────────────
+        dlg.Controls.Add(SectionHeader("CUSTOM COMMAND (OPTIONAL)", 138));
 
-        var shellBox = new TextBox
-        {
-            Location = new Point(130, 117),
-            Width = 270,
-            Text = Settings.Current.ShellCommand,
-        };
+        dlg.Controls.Add(FieldLabel("command", 168));
+        var shellBox = Field(130, 165, 290, Settings.Current.ShellCommand);
         dlg.Controls.Add(shellBox);
 
-        dlg.Controls.Add(new Label
-        {
-            Text = "(use {message}, {event}, {percent}, {quota})",
-            ForeColor = Color.FromArgb(100, 100, 110),
-            Font = new Font("Segoe UI", 8f),
-            Location = new Point(130, 142),
-            AutoSize = true,
-        });
+        dlg.Controls.Add(HelpText(
+            "Runs when an alert fires — for advanced integrations. " +
+            "Use {message}, {event}, {percent}, {quota}. Leave blank to skip.",
+            28, 194, 400));
+
+        // ── NOTIFY ME WHEN section ──────────────────────
+        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 244));
 
         var chkHighUsage = new CheckBox
         {
-            Text = "Notify on high usage (90%)",
-            Location = new Point(20, 165),
+            Text = "Usage reaches",
+            Location = new Point(28, 276),
             Checked = Settings.Current.NotifyHighUsage,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -90,10 +62,39 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(chkHighUsage);
 
+        var slider = new Slider
+        {
+            Location = new Point(150, 274),
+            Width = 190,
+            Minimum = 50,
+            Maximum = 99,
+            Value = Math.Clamp(Settings.Current.HighUsageThreshold, 50, 99),
+            Enabled = chkHighUsage.Checked,
+        };
+        dlg.Controls.Add(slider);
+
+        var pctLabel = new Label
+        {
+            Text = $"{slider.Value}%",
+            Location = new Point(350, 277),
+            ForeColor = Accent,
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            AutoSize = true,
+        };
+        dlg.Controls.Add(pctLabel);
+
+        slider.ValueChanged += (_, _) => pctLabel.Text = $"{slider.Value}%";
+        chkHighUsage.CheckedChanged += (_, _) =>
+        {
+            slider.Enabled = chkHighUsage.Checked;
+            pctLabel.ForeColor = chkHighUsage.Checked ? Accent : Muted;
+        };
+        if (!chkHighUsage.Checked) pctLabel.ForeColor = Muted;
+
         var chkLimitReached = new CheckBox
         {
-            Text = "Notify on limit reached (~100%)",
-            Location = new Point(20, 195),
+            Text = "Limit reached (~100%)",
+            Location = new Point(28, 312),
             Checked = Settings.Current.NotifyLimitReached,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -103,8 +104,8 @@ internal static class NotificationsDialog
 
         var chkReset = new CheckBox
         {
-            Text = "Notify on reset",
-            Location = new Point(20, 225),
+            Text = "Quota resets",
+            Location = new Point(28, 342),
             Checked = Settings.Current.NotifyReset,
             ForeColor = Color.White,
             BackColor = Color.Transparent,
@@ -112,29 +113,12 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(chkReset);
 
-        var btnTest = new Button
-        {
-            Text = "Test Notification",
-            Location = new Point(20, 265),
-            Width = 140,
-            Height = 28,
-            BackColor = Color.FromArgb(39, 39, 42),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-        };
+        // ── Footer buttons ──────────────────────────────
+        var btnTest = FooterButton("Test Notification", 20, 388, 140, FieldBg, Color.White);
         btnTest.Click += (_, _) => _ = notifier.SendTestAsync();
         dlg.Controls.Add(btnTest);
 
-        var btnSave = new Button
-        {
-            Text = "Save",
-            Location = new Point(230, 265),
-            Width = 80,
-            Height = 28,
-            BackColor = Color.FromArgb(56, 189, 248),
-            ForeColor = Color.FromArgb(15, 15, 15),
-            FlatStyle = FlatStyle.Flat,
-        };
+        var btnSave = FooterButton("Save", 250, 388, 80, Accent, Color.FromArgb(15, 15, 15));
         btnSave.Click += (_, _) =>
         {
             Settings.Current.NtfyTopic = ntfyTopicBox.Text;
@@ -143,24 +127,69 @@ internal static class NotificationsDialog
             Settings.Current.NotifyHighUsage = chkHighUsage.Checked;
             Settings.Current.NotifyLimitReached = chkLimitReached.Checked;
             Settings.Current.NotifyReset = chkReset.Checked;
+            Settings.Current.HighUsageThreshold = slider.Value;
             Settings.Current.Save();
             dlg.Close();
         };
         dlg.Controls.Add(btnSave);
 
-        var btnCancel = new Button
-        {
-            Text = "Cancel",
-            Location = new Point(320, 265),
-            Width = 80,
-            Height = 28,
-            BackColor = Color.FromArgb(39, 39, 42),
-            ForeColor = Color.White,
-            FlatStyle = FlatStyle.Flat,
-        };
+        var btnCancel = FooterButton("Cancel", 340, 388, 80, FieldBg, Color.White);
         btnCancel.Click += (_, _) => dlg.Close();
         dlg.Controls.Add(btnCancel);
 
         dlg.ShowDialog();
+    }
+
+    private static Label SectionHeader(string text, int y) => new()
+    {
+        Text = text,
+        ForeColor = Accent,
+        Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+        Location = new Point(20, y),
+        AutoSize = true,
+    };
+
+    private static Label FieldLabel(string text, int y) => new()
+    {
+        Text = text,
+        ForeColor = Color.White,
+        Location = new Point(28, y),
+        AutoSize = true,
+    };
+
+    private static Label HelpText(string text, int x, int y, int width) => new()
+    {
+        Text = text,
+        ForeColor = Muted,
+        Font = new Font("Segoe UI", 8.5f),
+        Location = new Point(x, y),
+        Size = new Size(width, 32),
+    };
+
+    private static TextBox Field(int x, int y, int width, string value) => new()
+    {
+        Location = new Point(x, y),
+        Width = width,
+        Text = value,
+        BackColor = Color.FromArgb(39, 39, 42),
+        ForeColor = Color.White,
+        BorderStyle = BorderStyle.FixedSingle,
+    };
+
+    private static Button FooterButton(string text, int x, int y, int width, Color back, Color fore)
+    {
+        var btn = new Button
+        {
+            Text = text,
+            Location = new Point(x, y),
+            Width = width,
+            Height = 30,
+            BackColor = back,
+            ForeColor = fore,
+            FlatStyle = FlatStyle.Flat,
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+        btn.FlatAppearance.BorderSize = 0;
+        return btn;
     }
 }
