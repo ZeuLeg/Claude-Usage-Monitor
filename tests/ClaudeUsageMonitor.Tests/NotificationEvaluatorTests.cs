@@ -178,4 +178,17 @@ public class NotificationEvaluatorTests
 
         Assert.All(events, e => Assert.Equal("5h session", e.Quota));
     }
+
+    // 9. Null resetsAt on first poll → guard fires once; subsequent real resetsAt → Reset detected
+    [Fact]
+    public void NullResetsAt_OnFirstPoll_ThenRealResetsAt_DetectsReset()
+    {
+        var ev = new NotificationEvaluator();
+        var first = ev.Evaluate(new UsageData { SessionPercent = 50, SessionResetsAt = null }).ToList();
+        Assert.DoesNotContain(first, e => e.Kind == NotifyKind.Reset);
+
+        var t = DateTime.UtcNow.AddHours(2);
+        var second = ev.Evaluate(new UsageData { SessionPercent = 5, SessionResetsAt = t }).ToList();
+        Assert.Contains(second, e => e.Kind == NotifyKind.Reset);
+    }
 }

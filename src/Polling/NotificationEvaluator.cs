@@ -36,11 +36,9 @@ public sealed class NotificationEvaluator
         public IEnumerable<NotifyEvent> Evaluate(
             double pct, DateTime? resetsAt, string resetText, string quotaLabel)
         {
-            // Reset detection
             if (_lastResetsAt == null)
             {
-                // First poll guard: record but do not yield Reset
-                _lastResetsAt = resetsAt;
+                _lastResetsAt = resetsAt ?? DateTime.MinValue;
             }
             else if (resetsAt.HasValue && resetsAt.Value > _lastResetsAt.Value)
             {
@@ -54,7 +52,6 @@ public sealed class NotificationEvaluator
                 _lastResetsAt = resetsAt;
             }
 
-            // LimitReached (>= 99.5%)
             if (pct >= 99.5)
             {
                 if (!_reached100)
@@ -68,7 +65,6 @@ public sealed class NotificationEvaluator
                 _reached100 = false;
             }
 
-            // HighUsage (>= 90%)
             if (pct >= 90.0)
             {
                 if (!_warned90)
