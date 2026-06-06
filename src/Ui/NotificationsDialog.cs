@@ -115,7 +115,11 @@ internal static class NotificationsDialog
 
         // ── Footer buttons ──────────────────────────────
         var btnTest = FooterButton("Test Notification", 20, 388, 140, FieldBg, Color.White);
-        btnTest.Click += (_, _) => _ = notifier.SendTestAsync();
+        btnTest.Click += async (_, _) =>
+        {
+            try { await notifier.SendTestAsync(); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "Test failed", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        };
         dlg.Controls.Add(btnTest);
 
         var btnSave = FooterButton("Save", 250, 388, 80, Accent, Color.FromArgb(15, 15, 15));
