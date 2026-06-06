@@ -7,6 +7,8 @@ namespace ClaudeUsageMonitor;
 /// Tries `claude auth status` first (lightweight), then `claude update` if needed.
 /// Throttled to at most one attempt per 5 minutes.
 /// </summary>
+internal enum RefreshResult { Success, Throttled, Failed }
+
 internal sealed class TokenRefresher
 {
     private static readonly TimeSpan MinInterval = TimeSpan.FromMinutes(5);
@@ -15,18 +17,18 @@ internal sealed class TokenRefresher
 
     /// <summary>
     /// Attempts to refresh the OAuth token via the Claude CLI.
-    /// Returns true if a valid token is now available (expiresAt advanced into the future).
+    /// Returns Success, Throttled (too soon since last attempt), or Failed.
     /// </summary>
-    public async Task<bool> TryRefreshAsync(CancellationToken ct = default)
+    public async Task<RefreshResult> TryRefreshAsync(CancellationToken ct = default)
     {
-        if (!await _gate.WaitAsync(0, ct)) return false;
+        if (!await _gate.WaitAsync(0, ct)) return RefreshResult.Throttled;
         try
         {
             var now = DateTime.UtcNow;
             if (now - _lastAttempt < MinInterval)
             {
                 Logger.Info("[TokenRefresher] Throttled — last attempt was too recent.");
-                return false;
+                return RefreshResult.Throttled;
             }
             _lastAttempt = now;
 
@@ -40,7 +42,7 @@ internal sealed class TokenRefresher
             if (after > before && after > DateTime.UtcNow.AddSeconds(30))
             {
                 Logger.Info($"[TokenRefresher] Token refreshed via 'claude auth status'. New expiresAt: {after:u}");
-                return true;
+                return RefreshResult.Success;
             }
 
             // Second try: claude update (validated approach from jens-duttke/usage-monitor-for-claude)
@@ -53,11 +55,11 @@ internal sealed class TokenRefresher
             if (after > before && after > DateTime.UtcNow.AddSeconds(30))
             {
                 Logger.Info($"[TokenRefresher] Token refreshed via 'claude update'. New expiresAt: {after:u}");
-                return true;
+                return RefreshResult.Success;
             }
 
             Logger.Warn("[TokenRefresher] Neither 'claude auth status' nor 'claude update' advanced expiresAt.");
-            return false;
+            return RefreshResult.Failed;
         }
         finally
         {

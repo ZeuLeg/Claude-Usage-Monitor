@@ -24,8 +24,8 @@ internal sealed class TokenProvider
 
         // Token expired (or env var fallback with DateTime.MinValue) — try refresh
         Logger.Info($"[TokenProvider] Token expires at {creds.ExpiresAt:u}, attempting refresh.");
-        var refreshed = await _refresher.TryRefreshAsync(ct);
-        if (refreshed)
+        var result = await _refresher.TryRefreshAsync(ct);
+        if (result == RefreshResult.Success)
         {
             var fresh = CredentialReader.ReadCredentials();
             if (fresh != null && fresh.ExpiresAt - ExpirySkew > DateTime.UtcNow)
@@ -38,27 +38,35 @@ internal sealed class TokenProvider
     }
 
     /// <summary>
-    /// Called reactively after a 401/403. Forces a refresh attempt and returns the new token,
-    /// or null if refresh fails. Skips the throttle check — this is an emergency path.
+    /// Called reactively after a 401/403. Returns (token, throttled).
+    /// throttled=true means the refresh window hasn't elapsed yet — caller should
+    /// back off silently rather than showing an AuthExpired alert.
     /// </summary>
-    public async Task<string?> ForceRefreshAndGetAsync(CancellationToken ct = default)
+    public async Task<(string? token, bool throttled)> ForceRefreshAndGetAsync(CancellationToken ct = default)
     {
         Logger.Info("[TokenProvider] Force refresh triggered by 401/403.");
-        var refreshed = await _refresher.TryRefreshAsync(ct);
-        if (!refreshed)
+        var result = await _refresher.TryRefreshAsync(ct);
+
+        if (result == RefreshResult.Throttled)
+        {
+            Logger.Info("[TokenProvider] Force refresh throttled — will retry after backoff.");
+            return (null, true);
+        }
+
+        if (result == RefreshResult.Failed)
         {
             Logger.Warn("[TokenProvider] Force refresh failed.");
-            return null;
+            return (null, false);
         }
 
         var creds = CredentialReader.ReadCredentials();
         if (creds == null || creds.ExpiresAt - ExpirySkew <= DateTime.UtcNow)
         {
             Logger.Warn("[TokenProvider] Force refresh: still no valid token after refresh.");
-            return null;
+            return (null, false);
         }
 
         Logger.Info("[TokenProvider] Force refresh succeeded.");
-        return creds.AccessToken;
+        return (creds.AccessToken, false);
     }
 }

@@ -139,7 +139,7 @@ internal sealed class UsagePoller : IDisposable
         {
             // Reactive refresh: token may have expired between the expiry check and the HTTP call
             Logger.Warn("OAuth 401/403 received — attempting reactive token refresh.");
-            var freshToken = await _tokenProvider.ForceRefreshAndGetAsync(_cts.Token);
+            var (freshToken, throttled) = await _tokenProvider.ForceRefreshAndGetAsync(_cts.Token);
             if (freshToken != null)
             {
                 try
@@ -165,12 +165,22 @@ internal sealed class UsagePoller : IDisposable
                 }
             }
 
-            // Refresh failed or second fetch still unauthorized — notify user
             _errors++;
             _backoffMs = NextBackoff(_backoffMs);
             _pollTimer.Interval = _backoffMs;
-            Logger.Error("OAuth token expired or invalid; refresh did not help. Run 'claude login'.");
-            AuthExpired?.Invoke();
+
+            if (throttled)
+            {
+                // Throttled: refresh window hasn't elapsed — network may still be settling.
+                // Back off silently; the next scheduled poll will try refresh again.
+                Logger.Warn("Reactive refresh throttled — backing off silently, will retry.");
+            }
+            else
+            {
+                // Refresh was actually attempted and failed — token is genuinely invalid.
+                Logger.Error("OAuth token expired or invalid; refresh did not help. Run 'claude login'.");
+                AuthExpired?.Invoke();
+            }
         }
         catch (Exception ex)
         {
