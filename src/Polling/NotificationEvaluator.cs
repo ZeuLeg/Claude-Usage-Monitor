@@ -6,13 +6,16 @@ public record NotifyEvent(NotifyKind Kind, string Quota, double Percent, string 
 
 public sealed class NotificationEvaluator
 {
+    /// <summary>Percent at which a HighUsage event fires. Configurable; default 90.</summary>
+    public double HighUsageThreshold { get; set; } = 90.0;
+
     private QuotaState _session = new();
     private QuotaState _weekly = new();
 
     public IEnumerable<NotifyEvent> Evaluate(UsageData data)
     {
         foreach (var ev in _session.Evaluate(
-            data.SessionPercent, data.SessionResetsAt, data.SessionResetText, "5h session"))
+            data.SessionPercent, data.SessionResetsAt, data.SessionResetText, "5h session", HighUsageThreshold))
         {
             yield return ev;
         }
@@ -20,7 +23,7 @@ public sealed class NotificationEvaluator
         if (data.HasWeekly)
         {
             foreach (var ev in _weekly.Evaluate(
-                data.WeeklyPercent, data.WeeklyResetsAt, data.WeeklyResetText, "7d weekly"))
+                data.WeeklyPercent, data.WeeklyResetsAt, data.WeeklyResetText, "7d weekly", HighUsageThreshold))
             {
                 yield return ev;
             }
@@ -31,12 +34,12 @@ public sealed class NotificationEvaluator
     {
         private static readonly TimeSpan ResetTolerance = TimeSpan.FromMinutes(1);
 
-        private bool _warned90;
+        private bool _warnedHigh;
         private bool _reached100;
         private DateTime? _lastResetsAt;
 
         public IEnumerable<NotifyEvent> Evaluate(
-            double pct, DateTime? resetsAt, string resetText, string quotaLabel)
+            double pct, DateTime? resetsAt, string resetText, string quotaLabel, double highUsageThreshold)
         {
             if (_lastResetsAt == null)
             {
@@ -48,7 +51,7 @@ public sealed class NotificationEvaluator
                 if (delta > ResetTolerance)
                 {
                     yield return new NotifyEvent(NotifyKind.Reset, quotaLabel, pct, resetText);
-                    _warned90 = false;
+                    _warnedHigh = false;
                     _reached100 = false;
                 }
                 if (delta > TimeSpan.Zero)
@@ -68,17 +71,17 @@ public sealed class NotificationEvaluator
                 _reached100 = false;
             }
 
-            if (pct >= 90.0)
+            if (pct >= highUsageThreshold)
             {
-                if (!_warned90)
+                if (!_warnedHigh)
                 {
                     yield return new NotifyEvent(NotifyKind.HighUsage, quotaLabel, pct, resetText);
-                    _warned90 = true;
+                    _warnedHigh = true;
                 }
             }
             else
             {
-                _warned90 = false;
+                _warnedHigh = false;
             }
         }
     }

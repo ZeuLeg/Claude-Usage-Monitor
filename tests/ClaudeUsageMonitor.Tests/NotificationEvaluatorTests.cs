@@ -217,4 +217,30 @@ public class NotificationEvaluatorTests
         var fourth = ev.Evaluate(Session(5, t3)).ToList();
         Assert.Contains(fourth, e => e.Kind == NotifyKind.Reset);
     }
+
+    // Configurable threshold: high usage fires at a custom value
+    [Fact]
+    public void HighUsage_FiresAtCustomThreshold()
+    {
+        var ev = new NotificationEvaluator { HighUsageThreshold = 75.0 };
+
+        var below = ev.Evaluate(Session(74)).ToList();
+        Assert.DoesNotContain(below, e => e.Kind == NotifyKind.HighUsage);
+
+        var at = ev.Evaluate(Session(76)).ToList();
+        Assert.Contains(at, e => e.Kind == NotifyKind.HighUsage);
+    }
+
+    // Default threshold remains 90 when not configured
+    [Fact]
+    public void HighUsage_DefaultThresholdIs90()
+    {
+        var ev = new NotificationEvaluator();
+
+        var below = ev.Evaluate(Session(89)).ToList();
+        Assert.DoesNotContain(below, e => e.Kind == NotifyKind.HighUsage);
+
+        var at = ev.Evaluate(Session(90)).ToList();
+        Assert.Contains(at, e => e.Kind == NotifyKind.HighUsage);
+    }
 }
