@@ -54,10 +54,8 @@ internal sealed class Notifier
         try
         {
             var url = $"{Settings.Current.NtfyServer}/{Settings.Current.NtfyTopic}";
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(message, Encoding.UTF8),
-            };
+            using var content = new StringContent(message, Encoding.UTF8);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
             request.Headers.Add("Title", "Claude Usage Monitor");
             await _http.SendAsync(request);
         }
@@ -84,7 +82,7 @@ internal sealed class Notifier
                 RedirectStandardOutput = false,
                 RedirectStandardError = false,
             };
-            Process.Start(psi);
+            Process.Start(psi)?.Dispose();
         }
         catch (Exception ex)
         {

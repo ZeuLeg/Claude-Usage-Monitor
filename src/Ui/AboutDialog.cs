@@ -9,7 +9,7 @@ internal static class AboutDialog
             .GetExecutingAssembly().GetName().Version;
         var verStr = version is null ? "?" : $"{version.Major}.{version.Minor}.{version.Build}";
 
-        var dlg = new Form
+        using var dlg = new Form
         {
             Text = "About Claude Usage Monitor",
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
@@ -52,7 +52,7 @@ internal static class AboutDialog
             {
                 FileName = "https://github.com/ZeuLeg/Claude-Usage-Monitor",
                 UseShellExecute = true,
-            });
+            })?.Dispose();
         dlg.Controls.Add(link);
 
         dlg.ShowDialog();
