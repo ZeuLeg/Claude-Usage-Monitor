@@ -1,5 +1,7 @@
 namespace ClaudeUsageMonitor;
 
+public enum LogLevel { Error = 0, Warn = 1, Info = 2, Debug = 3 }
+
 internal static class Logger
 {
     private static readonly string LogPath = Path.Combine(
@@ -12,12 +14,16 @@ internal static class Logger
 
     public static string LogDirectory => Path.GetDirectoryName(LogPath)!;
 
-    public static void Info(string msg)  => Write("INFO ", msg);
-    public static void Warn(string msg)  => Write("WARN ", msg);
-    public static void Error(string msg) => Write("ERROR", msg);
+    public static LogLevel MinLevel { get; set; } = LogLevel.Info;
 
-    private static void Write(string level, string msg)
+    public static void Error(string msg) => Write(LogLevel.Error, "ERROR", msg);
+    public static void Warn(string msg)  => Write(LogLevel.Warn,  "WARN ", msg);
+    public static void Info(string msg)  => Write(LogLevel.Info,  "INFO ", msg);
+    public static void Debug(string msg) => Write(LogLevel.Debug, "DEBUG", msg);
+
+    private static void Write(LogLevel level, string tag, string msg)
     {
+        if (level > MinLevel) return;
         try
         {
             Directory.CreateDirectory(LogDirectory);
@@ -27,11 +33,10 @@ internal static class Logger
                 if (info.Exists && info.Length > MaxBytes)
                 {
                     var bak = LogPath + ".bak";
-                    if (File.Exists(bak)) File.Delete(bak);
-                    File.Move(LogPath, bak);
+                    File.Move(LogPath, bak, overwrite: true);
                 }
                 File.AppendAllText(LogPath,
-                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{level}] {msg}{Environment.NewLine}");
+                    $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{tag}] {msg}{Environment.NewLine}");
             }
         }
         catch { /* never crash the app over logging */ }
