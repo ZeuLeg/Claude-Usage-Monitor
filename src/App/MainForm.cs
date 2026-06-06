@@ -11,8 +11,8 @@ public sealed class MainForm : Form
 
     private bool _tokenWarningShown;
     private bool _authWarningShown;
-    private bool _sessionAlerted;
-    private bool _weeklyAlerted;
+    private readonly Notifier _notifier;
+    private readonly NotificationEvaluator _evaluator;
     private TaskbarWidget? _taskbarWidget;
     private ToolStripMenuItem? _updateMenuItem;
     private string? _pendingUpdateTag;
@@ -27,6 +27,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
+        Settings.Load();
         ShowInTaskbar = false;
         WindowState = FormWindowState.Minimized;
         FormBorderStyle = FormBorderStyle.None;
@@ -45,15 +46,17 @@ public sealed class MainForm : Form
         _tray.ShowText("...", Palette.Gray, "Claude Usage Monitor");
         _trayIcon.Visible = true;
 
+        _notifier = new Notifier(_trayIcon);
+        _evaluator = new NotificationEvaluator();
+
         _poller.Updated += data =>
         {
             _tray.ShowUsage(data);
             _taskbarWidget?.Update(data);
             _tokenWarningShown = false;
             _authWarningShown = false;
-            MaybeAlert(ref _sessionAlerted, data.SessionPercent, "5h session", data.SessionResetText);
-            if (data.HasWeekly)
-                MaybeAlert(ref _weeklyAlerted, data.WeeklyPercent, "7d weekly", data.WeeklyResetText);
+            foreach (var ev in _evaluator.Evaluate(data))
+                _notifier.Dispatch(ev);
         };
         _poller.TokenMissing += diag =>
         {
@@ -155,6 +158,10 @@ public sealed class MainForm : Form
 
         m.Items.Add(new ToolStripSeparator());
 
+        var notifications = new ToolStripMenuItem("Notifications…");
+        notifications.Click += (_, _) => NotificationsDialog.Show(_notifier);
+        m.Items.Add(notifications);
+
         var about = new ToolStripMenuItem("About");
         about.Click += (_, _) => AboutDialog.Show();
         m.Items.Add(about);
@@ -213,21 +220,6 @@ public sealed class MainForm : Form
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Unhandled] {ex}"); }
-    }
-
-    // Balloon once when a window crosses 90%; re-arms after it drops back below (i.e. after a reset).
-    private void MaybeAlert(ref bool alerted, double pct, string label, string resetText)
-    {
-        if (pct >= 90 && !alerted)
-        {
-            alerted = true;
-            _trayIcon.ShowBalloonTip(7000, "Usage warning",
-                $"{label} is at {pct:0}% — resets in {resetText}.", ToolTipIcon.Warning);
-        }
-        else if (pct < 90)
-        {
-            alerted = false;
-        }
     }
 
     // ═══════════════════════════════════════
