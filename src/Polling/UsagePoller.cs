@@ -14,7 +14,7 @@ internal sealed class UsagePoller : IDisposable
     public event Action<UsageData>? Updated;
     public event Action<string>? TokenMissing;
     public event Action? AuthExpired;
-    public event Action<UsageData?, string, int>? Failed;
+    public event Action<UsageData?, string, int, bool>? Failed;
 
     // ═══════════════════════════════════════
     // CONSTANTS & FIELDS
@@ -198,8 +198,12 @@ internal sealed class UsagePoller : IDisposable
             _errors++;
             _backoffMs = NextBackoff(_backoffMs);
             _pollTimer.Interval = _backoffMs;
-            Logger.Error($"Poll failed (attempt {_errors}): {ex.GetType().Name}: {ex.Message}");
-            Failed?.Invoke(_lastData, ex.Message, _errors);
+            var isConnectivity = IsConnectivityError(ex);
+            if (isConnectivity)
+                Logger.Warn($"Poll failed (attempt {_errors}): {ex.GetType().Name}: {ex.Message}");
+            else
+                Logger.Error($"Poll failed (attempt {_errors}): {ex.GetType().Name}: {ex.Message}");
+            Failed?.Invoke(_lastData, ex.Message, _errors, isConnectivity);
         }
         finally
         {
@@ -210,6 +214,21 @@ internal sealed class UsagePoller : IDisposable
     internal static int NextBackoff(int current) => Math.Min(current * 2, MaxBackoffMs);
 
     internal static bool ShouldShowStaleIcon(UsageData? last) => last != null;
+
+    internal static bool IsConnectivityError(Exception ex)
+    {
+        var e = ex;
+        while (e != null)
+        {
+            if (e is System.Net.Sockets.SocketException)
+                return true;
+            e = e.InnerException;
+        }
+        // HttpRequestException without an HTTP status code = network-level failure (no server reached)
+        if (ex is System.Net.Http.HttpRequestException hre && hre.StatusCode == null)
+            return true;
+        return false;
+    }
 
     private void ScheduleResetPoll(UsageData data)
     {

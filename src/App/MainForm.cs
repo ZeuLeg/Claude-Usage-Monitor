@@ -82,10 +82,12 @@ public sealed class MainForm : Form
                     "Please run 'claude login' in the terminal.", ToolTipIcon.Warning);
             }
         };
-        _poller.Failed += (last, msg, count) =>
+        _poller.Failed += (last, msg, count, isConnectivity) =>
         {
             if (UsagePoller.ShouldShowStaleIcon(last))
                 _tray.ShowStale(last!, "No connection — showing last known usage");
+            else if (isConnectivity)
+                _tray.ShowText("---", Palette.Gray, "Waiting for connection…");
             else
             {
                 _tray.ShowText("ERR", Palette.Crit, $"Error: {msg}");
