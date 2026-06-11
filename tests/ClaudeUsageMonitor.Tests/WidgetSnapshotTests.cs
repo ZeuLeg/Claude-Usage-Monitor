@@ -169,6 +169,67 @@ public class WidgetSnapshotTests
         Both("weekly_hours", data);
     }
 
+    // ── HoverCard Scenarios ──────────────────────────────────────────────────
+
+    private static void HoverSnapshot(string name, bool light, UsageData data, BurnRateTracker? burnRate = null)
+    {
+        Directory.CreateDirectory(SnapshotDir);
+        string suffix = light ? "_light" : "_dark";
+        string path   = Path.Combine(SnapshotDir, $"{name}{suffix}.png");
+
+        using var bmp = new Bitmap(HoverCard.CardW, HoverCard.CardH, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+            HoverCard.Render(g, HoverCard.CardW, HoverCard.CardH, light, data, burnRate);
+
+        bmp.Save(path, ImageFormat.Png);
+        Assert.True(File.Exists(path), $"Snapshot not written: {path}");
+    }
+
+    [Fact]
+    public void HoverCardLight()
+    {
+        var now  = DateTime.UtcNow;
+        var data = new UsageData
+        {
+            PlanLabel       = "Max 20x",
+            SessionPercent  = 86,
+            SessionResetsAt = now.AddHours(2).AddMinutes(15),
+            WeeklyPercent   = 34,
+            WeeklyResetsAt  = now.AddDays(4).AddHours(10),
+            HasWeekly       = true,
+            OpusPercent     = 7,
+        };
+
+        // Burn rate: +20%/h → ETA ≈ ~42m which is < resetIn of 2h15m → ETA row shown
+        var burnRate = new BurnRateTracker();
+        burnRate.AddSample(now.AddMinutes(-30), 76.0);
+        burnRate.AddSample(now,                 86.0);
+
+        HoverSnapshot("hovercard", light: true, data, burnRate);
+    }
+
+    [Fact]
+    public void HoverCardDark()
+    {
+        var now  = DateTime.UtcNow;
+        var data = new UsageData
+        {
+            PlanLabel       = "Max 20x",
+            SessionPercent  = 86,
+            SessionResetsAt = now.AddHours(2).AddMinutes(15),
+            WeeklyPercent   = 34,
+            WeeklyResetsAt  = now.AddDays(4).AddHours(10),
+            HasWeekly       = true,
+            OpusPercent     = 7,
+        };
+
+        var burnRate = new BurnRateTracker();
+        burnRate.AddSample(now.AddMinutes(-30), 76.0);
+        burnRate.AddSample(now,                 86.0);
+
+        HoverSnapshot("hovercard", light: false, data, burnRate);
+    }
+
     // ── Tray Icon Scenarios ──────────────────────────────────────────────────
 
     [Fact]

@@ -132,6 +132,7 @@ internal sealed class UsagePoller : IDisposable
 
             var data = await _fetcher.FetchAsync(token, _cts.Token);
             data = UsageData.MergeCarryForward(_lastData, data);
+            data.PlanLabel = ResolvePlanLabel();
             if (data.WeeklyStale)
                 Logger.Warn("seven_day missing from API response; carrying forward previous weekly data.");
             var sig = $"{data.SessionPercent:0}|{data.HasWeekly}|{data.WeeklyPercent:0}|{data.ExtraEnabled}";
@@ -169,6 +170,7 @@ internal sealed class UsagePoller : IDisposable
                 {
                     var data = await _fetcher.FetchAsync(freshToken, _cts.Token);
                     data = UsageData.MergeCarryForward(_lastData, data);
+                    data.PlanLabel = ResolvePlanLabel();
                     _lastData = data;
                     _errors = 0;
                     _backoffMs = PollIntervalMs;
@@ -295,6 +297,16 @@ internal sealed class UsagePoller : IDisposable
     // ═══════════════════════════════════════
     // ASYNC HELPER
     // ═══════════════════════════════════════
+
+    private static string? ResolvePlanLabel()
+    {
+        try
+        {
+            var creds = CredentialReader.ReadCredentials();
+            return UsageData.FormatPlanLabel(creds?.SubscriptionType, creds?.RateLimitTier);
+        }
+        catch { return null; }
+    }
 
     private static async void FireAndForget(Func<Task> action)
     {

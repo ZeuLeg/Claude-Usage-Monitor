@@ -44,7 +44,9 @@ public static class CredentialReader
         public string UserName;
     }
 
-    public record Credentials(string AccessToken, DateTime ExpiresAt);
+    public record Credentials(string AccessToken, DateTime ExpiresAt,
+                               string? SubscriptionType = null,
+                               string? RateLimitTier   = null);
 
     /// <summary>
     /// Returns the OAuth credentials (token + expiry), or null if none can be found.
@@ -186,7 +188,17 @@ public static class CredentialReader
                 expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(epochMs).UtcDateTime;
             }
 
-            return new Credentials(token, expiresAt);
+            string? subscriptionType = null;
+            if (oauth.TryGetProperty("subscriptionType", out var stProp) &&
+                stProp.ValueKind == JsonValueKind.String)
+                subscriptionType = stProp.GetString();
+
+            string? rateLimitTier = null;
+            if (oauth.TryGetProperty("rateLimitTier", out var rltProp) &&
+                rltProp.ValueKind == JsonValueKind.String)
+                rateLimitTier = rltProp.GetString();
+
+            return new Credentials(token, expiresAt, subscriptionType, rateLimitTier);
         }
         catch (Exception ex)
         {

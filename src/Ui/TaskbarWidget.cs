@@ -39,16 +39,19 @@ internal sealed class TaskbarWidget : IDisposable
 
     // ── State ────────────────────────────────────────────────────────────────
     private readonly WidgetNativeWindow _nw;
+    private readonly HoverCard _hoverCard;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _topmostTimer;
     private UsageData? _data;
     private BurnRateTracker? _burnRate;
+    private bool _widgetHidden;
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
     public TaskbarWidget(UsageData? initialData = null)
     {
-        _nw = new WidgetNativeWindow(Redraw);
+        _hoverCard = new HoverCard();
+        _nw = new WidgetNativeWindow(Redraw, OnHoverDwell, OnMouseLeft);
 
         _timer = new System.Windows.Forms.Timer();
         _timer.Tick += (_, _) => Redraw();
@@ -100,6 +103,8 @@ internal sealed class TaskbarWidget : IDisposable
     {
         if (_nw.Handle != IntPtr.Zero)
         {
+            _widgetHidden = true;
+            _hoverCard.Hide();
             _timer.Stop();
             _topmostTimer.Stop();
             Win32Interop.ShowWindow(_nw.Handle, Win32Interop.SW_HIDE);
@@ -111,6 +116,7 @@ internal sealed class TaskbarWidget : IDisposable
     {
         if (_nw.Handle != IntPtr.Zero)
         {
+            _widgetHidden = false;
             Win32Interop.ShowWindow(_nw.Handle, Win32Interop.SW_SHOWNOACTIVATE);
             _nw.Reposition();
             _nw.AssertTopMost();
@@ -124,8 +130,21 @@ internal sealed class TaskbarWidget : IDisposable
         _topmostTimer.Stop();
         _topmostTimer.Dispose();
         _timer.Dispose();
+        _hoverCard.Dispose();
         _nw.Dispose();
     }
+
+    // ── Hover card callbacks ──────────────────────────────────────────────────
+
+    private void OnHoverDwell()
+    {
+        if (_widgetHidden || _data == null) return;
+        Win32Interop.GetWindowRect(_nw.Handle, out var wr);
+        _hoverCard.ShowAbove(wr.Left, wr.Top, wr.Bottom, wr.Width,
+                             Win32Interop.IsLightMode(), _data, _burnRate);
+    }
+
+    private void OnMouseLeft() => _hoverCard.Hide();
 
     // ── Rendering ────────────────────────────────────────────────────────────
 
@@ -508,19 +527,26 @@ internal sealed class TaskbarWidget : IDisposable
     {
         private const int WM_MOUSEMOVE = 0x0200;
 
-        private const int RestAlpha = 255; // fully opaque at rest; fades to 0 on hover
+        private const int RestAlpha   = 255; // fully opaque at rest; fades to 0 on hover
+        private const int HoverDwellMs = 400; // ms mouse must dwell before card appears
 
         private int _alpha       = RestAlpha;
         private int _targetAlpha = RestAlpha;
+        private bool _mouseInside;
+        private int  _dwellAccumMs; // accumulated ms mouse has been inside
 
         private readonly System.Windows.Forms.Timer _fadeTimer;
         private readonly Action _repaint;
+        private readonly Action _onHoverDwell;
+        private readonly Action _onMouseLeft;
 
         public int CurrentAlpha => _alpha;
 
-        internal WidgetNativeWindow(Action repaint)
+        internal WidgetNativeWindow(Action repaint, Action onHoverDwell, Action onMouseLeft)
         {
-            _repaint = repaint;
+            _repaint      = repaint;
+            _onHoverDwell = onHoverDwell;
+            _onMouseLeft  = onMouseLeft;
 
             _fadeTimer = new System.Windows.Forms.Timer { Interval = 40 };
             _fadeTimer.Tick += OnFadeTick;
@@ -608,14 +634,35 @@ internal sealed class TaskbarWidget : IDisposable
             if (_alpha < _targetAlpha)      _alpha = Math.Min(_targetAlpha, _alpha + step);
             else if (_alpha > _targetAlpha) _alpha = Math.Max(_targetAlpha, _alpha - step);
 
-            // When fully faded: poll cursor; restore when mouse leaves our area
-            if (_alpha == 0 && Handle != IntPtr.Zero)
+            // Poll cursor to track mouse-inside state for both fade restore and hover-card dwell
+            if (Handle != IntPtr.Zero)
             {
                 Win32Interop.GetCursorPos(out var pt);
                 Win32Interop.GetWindowRect(Handle, out var wr);
                 bool inside = pt.X >= wr.Left && pt.X <= wr.Right
                            && pt.Y >= wr.Top  && pt.Y <= wr.Bottom;
-                if (!inside) _targetAlpha = RestAlpha;
+
+                // Fade restore: when fully faded and mouse left, start fading back in
+                if (_alpha == 0 && !inside) _targetAlpha = RestAlpha;
+
+                // Hover dwell tracking
+                if (inside)
+                {
+                    _dwellAccumMs += _fadeTimer.Interval;
+                    if (!_mouseInside)
+                    {
+                        _mouseInside  = true;
+                        _dwellAccumMs = _fadeTimer.Interval; // count this tick as first
+                    }
+                    if (_dwellAccumMs >= HoverDwellMs)
+                        _onHoverDwell();
+                }
+                else if (_mouseInside)
+                {
+                    _mouseInside  = false;
+                    _dwellAccumMs = 0;
+                    _onMouseLeft();
+                }
             }
 
             _repaint();

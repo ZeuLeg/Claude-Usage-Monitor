@@ -32,6 +32,9 @@ public sealed class UsageData
     public DateTime? OpusResetsAt { get; set; }
     public bool HasOpus => OpusPercent.HasValue;
 
+    // User-friendly plan label derived from credentials (e.g., "Max 20x", "Pro", "Max")
+    public string? PlanLabel { get; set; }
+
     public DateTime FetchedAt  { get; set; } = DateTime.Now;
     // True when weekly data was carried forward from a previous poll (API returned no seven_day).
     public bool WeeklyStale    { get; set; }
@@ -124,5 +127,20 @@ public sealed class UsageData
         if (diff >= 5) return $"+{diff:0}% ahead";
         if (diff <= -5) return $"{diff:0}% under";
         return "on pace";
+    }
+
+    /// <summary>
+    /// Converts raw subscription/tier strings from credentials into a user-friendly label.
+    /// Priority: rateLimitTier (more specific) → subscriptionType.
+    /// </summary>
+    public static string? FormatPlanLabel(string? subscriptionType, string? rateLimitTier)
+    {
+        var raw = rateLimitTier ?? subscriptionType;
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        if (raw.Contains("20x", StringComparison.OrdinalIgnoreCase)) return "Max 20x";
+        if (raw.Contains("5x",  StringComparison.OrdinalIgnoreCase)) return "Max 5x";
+        if (raw.Equals("max",   StringComparison.OrdinalIgnoreCase)) return "Max";
+        if (raw.Contains("pro", StringComparison.OrdinalIgnoreCase)) return "Pro";
+        return raw; // unknown — pass through raw value
     }
 }
