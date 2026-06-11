@@ -713,7 +713,7 @@ internal sealed class TaskbarWidget : IDisposable
             {
                 if (hdcMem  != IntPtr.Zero) Win32Interop.DeleteDC(hdcMem);
                 if (hBitmap != IntPtr.Zero) Win32Interop.DeleteObject(hBitmap);
-                Win32Interop.ReleaseDC(IntPtr.Zero, hdcScreen);
+                _ = Win32Interop.ReleaseDC(IntPtr.Zero, hdcScreen);
                 return;
             }
 
@@ -761,7 +761,7 @@ internal sealed class TaskbarWidget : IDisposable
                 Win32Interop.SelectObject(hdcMem, hOld);
                 Win32Interop.DeleteObject(hBitmap);
                 Win32Interop.DeleteDC(hdcMem);
-                Win32Interop.ReleaseDC(IntPtr.Zero, hdcScreen);
+                _ = Win32Interop.ReleaseDC(IntPtr.Zero, hdcScreen);
             }
         }
 

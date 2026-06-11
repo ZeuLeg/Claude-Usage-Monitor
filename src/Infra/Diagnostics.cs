@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -8,24 +9,25 @@ internal static class Diagnostics
 {
     public static string BuildReport()
     {
+        var ic = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         var verStr = version is null ? "?" : $"{version.Major}.{version.Minor}.{version.Build}";
 
-        sb.AppendLine($"Claude Usage Monitor v{verStr}");
-        sb.AppendLine($"OS: {RuntimeInformation.OSDescription}");
-        sb.AppendLine($"Runtime: {RuntimeInformation.FrameworkDescription}");
+        sb.AppendLine(ic, $"Claude Usage Monitor v{verStr}");
+        sb.AppendLine(ic, $"OS: {RuntimeInformation.OSDescription}");
+        sb.AppendLine(ic, $"Runtime: {RuntimeInformation.FrameworkDescription}");
         sb.AppendLine();
 
         // Settings summary — redact sensitive fields
         var s = Settings.Current;
         sb.AppendLine("[Settings]");
-        sb.AppendLine($"NtfyServer: {s.NtfyServer}");
-        sb.AppendLine($"NtfyTopic: {(string.IsNullOrEmpty(s.NtfyTopic) ? "(not set)" : "***")}");
-        sb.AppendLine($"NotifyHighUsage: {s.NotifyHighUsage}");
-        sb.AppendLine($"NotifyLimitReached: {s.NotifyLimitReached}");
-        sb.AppendLine($"NotifyReset: {s.NotifyReset}");
-        sb.AppendLine($"LogLevel: {s.LogLevel}");
+        sb.AppendLine(ic, $"NtfyServer: {s.NtfyServer}");
+        sb.AppendLine(ic, $"NtfyTopic: {(string.IsNullOrEmpty(s.NtfyTopic) ? "(not set)" : "***")}");
+        sb.AppendLine(ic, $"NotifyHighUsage: {s.NotifyHighUsage}");
+        sb.AppendLine(ic, $"NotifyLimitReached: {s.NotifyLimitReached}");
+        sb.AppendLine(ic, $"NotifyReset: {s.NotifyReset}");
+        sb.AppendLine(ic, $"LogLevel: {s.LogLevel}");
         sb.AppendLine();
 
         // Last ~50 lines of log
@@ -47,7 +49,7 @@ internal static class Diagnostics
         }
         catch (Exception ex)
         {
-            sb.AppendLine($"(could not read log: {ex.Message})");
+            sb.AppendLine(ic, $"(could not read log: {ex.Message})");
         }
 
         return sb.ToString();

@@ -13,7 +13,7 @@ public sealed class NotificationEvaluator
     /// Minutes between repeated HighUsage notifications while usage stays above the threshold.
     /// 0 = fire only once per window (original behavior).
     /// </summary>
-    public int HighUsageCooldownMinutes { get; set; } = 0;
+    public int HighUsageCooldownMinutes { get; set; }
 
     /// <summary>
     /// Clock source — injectable for deterministic tests. Defaults to UTC wall clock.

@@ -37,7 +37,7 @@ internal class Settings
     /// Minutes between repeated HighUsage notifications while usage stays above the threshold.
     /// 0 = fire only once per window (legacy behavior).
     /// </summary>
-    public int HighUsageCooldownMinutes { get; set; } = 0;
+    public int HighUsageCooldownMinutes { get; set; }
 
     public static void Load()
     {

@@ -50,7 +50,7 @@ internal sealed class Slider : Control
         }
     }
 
-    private int TrackLeft  => ThumbR + 2;
+    private static int TrackLeft  => ThumbR + 2;
     private int TrackRight => Width - ThumbR - 2;
     private int TrackWidth => Math.Max(1, TrackRight - TrackLeft);
 

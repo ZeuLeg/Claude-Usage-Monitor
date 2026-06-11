@@ -9,11 +9,13 @@ namespace ClaudeUsageMonitor;
 /// </summary>
 internal enum RefreshResult { Success, Throttled, Failed }
 
-internal sealed class TokenRefresher
+internal sealed class TokenRefresher : IDisposable
 {
     private static readonly TimeSpan MinInterval = TimeSpan.FromMinutes(5);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTime _lastAttempt = DateTime.MinValue;
+
+    public void Dispose() => _gate.Dispose();
 
     /// <summary>
     /// Attempts to refresh the OAuth token via the Claude CLI.

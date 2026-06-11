@@ -4,30 +4,43 @@ A Windows tray app that shows your Claude.ai / Claude Code usage at a glance: a 
 
 **No session keys, no cookies, no separate login.** It reuses the OAuth token **Claude Code** already stored on your machine; that token never leaves your computer and the only network call is a single authenticated request to Anthropic's own usage API.
 
-<img width="696" height="56" alt="image" src="https://github.com/user-attachments/assets/58a821ee-bb92-45d5-866c-9f85470c1f11" />
+| Dark theme | Light theme | Hover detail card |
+|:---:|:---:|:---:|
+| ![Widget dark](docs/widget-dark.png) | ![Widget light](docs/widget-light.png) | ![Hover card dark](docs/hovercard-dark.png) |
 
-## How it works
+## Features
 
-The app reads the OAuth token that **Claude Code** stores in your Windows Credential Manager, then calls the Anthropic OAuth usage API. One HTTP request. No browser, no cookies, no WebView2, no manual configuration.
+- **5h session + 7d weekly progress bars** with percentage, countdown (e.g. `91% — 2h 3m`), tick marks at 25/50/75%, and a pace arrow (▲ ahead / ▼ under / • on pace)
+- **Burn rate tracker** — shows depletion ETA and warns when you're burning faster than expected
+- **Hover detail card** — full stats (session, weekly, Opus breakdown, extra usage) shown on mouse-over; widget fades and becomes click-through when not needed
+- **Opus breakdown** — separate bar for Opus-model weekly usage on plans that expose it
+- **Signed-out quiet state** — dims to last-known reading with an offline dot instead of showing errors
+- **Phone notifications via ntfy** — optional push alerts to your phone (configure a ntfy topic in settings)
+- **Dual progress-ring tray icon** — outer 5h ring (green → yellow → red), inner 7d ring (cyan → amber → red at critical)
+- **90% usage alerts** — one-time balloon per reset window; re-arms automatically
+- **Start with Windows** — toggle in the tray menu (per-user registry Run entry, no installer)
+- **Update notifications** — checks GitHub Releases once a day
 
-## Requirements:
-You need [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and logged in (`claude login`) 
-and .NET 10 - zero external dependencies. 
+## Install
 
-## Setup
+Download `ClaudeUsageMonitor.exe` from the [latest GitHub Release](https://github.com/ZeuLeg/Claude-Usage-Monitor/releases/latest). No installer — just run it.
 
-Use the `ClaudeUsageMonitor.exe` from the latest release 
+**Requirements:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and logged in (`claude login`) + .NET 10 runtime. Zero external dependencies.
 
-Or build it yourself: 
+## Build from source
 
 ```bash
 git clone https://github.com/ZeuLeg/Claude-Usage-Monitor.git
 cd Claude-Usage-Monitor
-dotnet build -c Release
-dotnet run
+dotnet build ClaudeUsageMonitor.sln -c Release
+dotnet run --project ClaudeUsageMonitor.csproj
 ```
 
-That's it. If you're logged into Claude Code, the tray icon should show your session usage within seconds.
+If you're logged into Claude Code, the tray icon should show your session usage within seconds.
+
+## How it works
+
+The app reads the OAuth token that **Claude Code** stores in your Windows Credential Manager, then calls the Anthropic OAuth usage API. One HTTP request. No browser, no cookies, no WebView2, no manual configuration.
 
 ### Automatic token refresh
 
@@ -63,7 +76,7 @@ Inspired by [omachala's bash gist](https://gist.github.com/omachala/5ea5af4bfa0b
 
 ## Token expired?
 
-Run `claude login` in your terminal — the app keeps retrying on a short backoff and picks up the new token automatically on the next poll, so it self-heals without a restart. Tired of re-logging in? See [Skip the daily re-login](#skip-the-daily-re-login-optional) above.
+Run `claude login` in your terminal — the app keeps retrying on a short backoff and picks up the new token automatically on the next poll, so it self-heals without a restart.
 
 ## Project structure
 

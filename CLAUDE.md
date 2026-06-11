@@ -1,5 +1,9 @@
 # Claude Usage Monitor
 
+## Ilke
+
+Guven > ozellik. Bu arac haftalarca acik kalir: sizinti/birikme kabul edilemez, hata durumlari sessiz ve zarif olmali, kullaniciya ham exception gosterilmez. Yeni ozellik eklerken "bu widget'in isi mi?" diye sor — minimal yuzey korunur, detay hover karti gibi istege bagli yuzeylere gider.
+
 C# WinForms (net10.0-windows) — Claude kullanim limitini Windows taskbar'i ustunde kucuk bir layered widget'ta gosterir.
 
 ## Komutlar

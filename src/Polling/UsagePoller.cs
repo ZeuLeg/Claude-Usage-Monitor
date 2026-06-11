@@ -95,6 +95,7 @@ internal sealed class UsagePoller : IDisposable
         _pollTimer.Dispose();
         _resetTimer?.Dispose();
         _fetcher.Dispose();
+        _tokenProvider.Dispose();
     }
 
     // ═══════════════════════════════════════

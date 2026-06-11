@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 
@@ -50,7 +51,8 @@ internal static class UpdateChecker
         try
         {
             if (File.Exists(path) &&
-                DateTime.TryParse(File.ReadAllText(path).Trim(), out var last))
+                DateTime.TryParse(File.ReadAllText(path).Trim(), CultureInfo.InvariantCulture,
+                                  DateTimeStyles.None, out var last))
                 return DateTime.Today > last.Date;
         }
         catch { }
@@ -64,7 +66,7 @@ internal static class UpdateChecker
             Directory.CreateDirectory(Logger.LogDirectory);
             File.WriteAllText(
                 Path.Combine(Logger.LogDirectory, LastCheckFile),
-                DateTime.Today.ToString("yyyy-MM-dd"));
+                DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         }
         catch { }
     }

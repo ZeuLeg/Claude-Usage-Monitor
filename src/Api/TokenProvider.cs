@@ -4,11 +4,13 @@ namespace ClaudeUsageMonitor;
 /// Orchestrates token reads, expiry checks, and proactive/reactive refresh.
 /// Call GetValidAccessTokenAsync() before each fetch; call ForceRefreshAndGetAsync() on 401/403.
 /// </summary>
-internal sealed class TokenProvider
+internal sealed class TokenProvider : IDisposable
 {
     private static readonly TimeSpan ExpirySkew = TimeSpan.FromSeconds(60);
 
     private readonly TokenRefresher _refresher = new();
+
+    public void Dispose() => _refresher.Dispose();
 
     /// <summary>
     /// Returns a valid access token, refreshing via the CLI if the stored token is expired.
