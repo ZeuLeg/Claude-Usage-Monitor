@@ -32,6 +32,11 @@ internal class Settings
     public bool NotifyReset { get; set; } = true;
     public bool NotifyHighUsage { get; set; } = true;
     public int HighUsageThreshold { get; set; } = 90;
+    /// <summary>
+    /// Minutes between repeated HighUsage notifications while usage stays above the threshold.
+    /// 0 = fire only once per window (legacy behavior).
+    /// </summary>
+    public int HighUsageCooldownMinutes { get; set; } = 0;
 
     public static void Load()
     {

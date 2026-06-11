@@ -51,13 +51,14 @@ public sealed class MainForm : Form
         _notifier = new Notifier(_trayIcon);
         _evaluator = new NotificationEvaluator
         {
-            HighUsageThreshold = Settings.Current.HighUsageThreshold,
+            HighUsageThreshold      = Settings.Current.HighUsageThreshold,
+            HighUsageCooldownMinutes = Settings.Current.HighUsageCooldownMinutes,
         };
 
         _poller.Updated += data =>
         {
             _tray.ShowUsage(data);
-            _taskbarWidget?.Update(data);
+            _taskbarWidget?.Update(data, _poller.BurnRate);
             _tokenWarningShown = false;
             _authWarningShown = false;
             foreach (var ev in _evaluator.Evaluate(data))
@@ -118,6 +119,15 @@ public sealed class MainForm : Form
         });
 
         startup.Start();
+
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        if (!IsHandleCreated) return;
+        if (InvokeRequired) { BeginInvoke(() => _taskbarWidget?.Reposition()); return; }
+        _taskbarWidget?.Reposition();
     }
 
     // ═══════════════════════════════════════
@@ -205,7 +215,8 @@ public sealed class MainForm : Form
         notifications.Click += (_, _) =>
         {
             NotificationsDialog.Show(_notifier);
-            _evaluator.HighUsageThreshold = Settings.Current.HighUsageThreshold;
+            _evaluator.HighUsageThreshold       = Settings.Current.HighUsageThreshold;
+            _evaluator.HighUsageCooldownMinutes  = Settings.Current.HighUsageCooldownMinutes;
         };
         m.Items.Add(notifications);
 
@@ -324,7 +335,14 @@ public sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _poller.Dispose(); _taskbarWidget?.Dispose(); _tray.Dispose(); _trayIcon?.Dispose(); }
+        if (disposing)
+        {
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            _poller.Dispose();
+            _taskbarWidget?.Dispose();
+            _tray.Dispose();
+            _trayIcon?.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

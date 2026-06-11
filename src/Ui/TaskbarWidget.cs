@@ -40,7 +40,9 @@ internal sealed class TaskbarWidget : IDisposable
     // ── State ────────────────────────────────────────────────────────────────
     private readonly WidgetNativeWindow _nw;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _topmostTimer;
     private UsageData? _data;
+    private BurnRateTracker? _burnRate;
 
     // ── Constructor ──────────────────────────────────────────────────────────
 
@@ -51,6 +53,12 @@ internal sealed class TaskbarWidget : IDisposable
         _timer = new System.Windows.Forms.Timer();
         _timer.Tick += (_, _) => Redraw();
 
+        // Re-assert TOPMOST every ~2 s; Win11 can silently demote layered windows
+        // when other applications are activated.
+        _topmostTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        _topmostTimer.Tick += (_, _) => _nw.AssertTopMost();
+        _topmostTimer.Start();
+
         if (initialData != null)
             Update(initialData);
         else
@@ -59,9 +67,10 @@ internal sealed class TaskbarWidget : IDisposable
 
     // ── Public API ───────────────────────────────────────────────────────────
 
-    public void Update(UsageData data)
+    public void Update(UsageData data, BurnRateTracker? burnRate = null)
     {
         _data = data;
+        if (burnRate != null) _burnRate = burnRate;
         Redraw();
     }
 
@@ -71,6 +80,7 @@ internal sealed class TaskbarWidget : IDisposable
     public void Reattach()
     {
         _nw.Reposition();
+        _nw.AssertTopMost();
         Redraw();
     }
 
@@ -81,11 +91,14 @@ internal sealed class TaskbarWidget : IDisposable
     public void Reposition()
     {
         _nw.Reposition();
+        _nw.AssertTopMost();
         Redraw();
     }
 
     public void Dispose()
     {
+        _topmostTimer.Stop();
+        _topmostTimer.Dispose();
         _timer.Dispose();
         _nw.Dispose();
     }
@@ -94,7 +107,7 @@ internal sealed class TaskbarWidget : IDisposable
 
     private void Redraw()
     {
-        _nw.Paint(Win32Interop.IsLightMode(), _data);
+        _nw.Paint(Win32Interop.IsLightMode(), _data, _burnRate);
         ScheduleNextRedraw();
     }
 
@@ -154,7 +167,7 @@ internal sealed class TaskbarWidget : IDisposable
 
     // ── Render logic (static, called from WidgetNativeWindow.Paint) ───────────
 
-    internal static void Render(Graphics g, int w, int h, bool light, UsageData? data)
+    internal static void Render(Graphics g, int w, int h, bool light, UsageData? data, BurnRateTracker? burnRate = null)
     {
         g.Clear(Color.Transparent);
         g.SmoothingMode      = SmoothingMode.AntiAlias;
@@ -196,20 +209,53 @@ internal sealed class TaskbarWidget : IDisposable
 
         int effectiveBarW = BarW;
 
+        // Compute ETA: only show in Row1 when ETA < reset window (limit before reset)
+        string? etaText = null;
+        Color?  etaColor = null;
+        if (burnRate != null)
+        {
+            var eta = burnRate.EstimateToFull(data.SessionPercent);
+            if (eta.HasValue && data.SessionResetsAt.HasValue)
+            {
+                var resetIn = data.SessionResetIn;
+                if (eta.Value < resetIn)
+                {
+                    // Limit will be hit before the session resets — show as warning
+                    etaText  = FormatEta(eta.Value);
+                    etaColor = data.SessionPercent >= 90 ? FillCrit : FillWarn;
+                }
+            }
+        }
+
         DrawRow(g, Row1Y, "5h", data.SessionPercent, data.SessionResetIn, data.SessionPaceState,
-                textClr, trackClr, effectiveBarW, data.SessionExpectedPercent);
+                textClr, trackClr, light, effectiveBarW, data.SessionExpectedPercent,
+                etaText, etaColor);
 
         if (data.HasWeekly)
+        {
+            string? opusSuffix = data.HasOpus ? $"· Op {data.OpusPercent!.Value:0}" : null;
             DrawRow(g, Row2Y, "7d", data.WeeklyPercent, data.WeeklyResetIn, data.WeeklyPaceState,
-                    textClr, trackClr, effectiveBarW, data.WeeklyExpectedPercent);
+                    textClr, trackClr, light, effectiveBarW, data.WeeklyExpectedPercent,
+                    opusSuffix, null);
+        }
         else
+        {
             DrawRow(g, Row2Y, "7d", -1, TimeSpan.Zero, PaceState.OnPace,
-                    textClr, trackClr, effectiveBarW, 0);
+                    textClr, trackClr, light, effectiveBarW, 0, null, null);
+        }
+    }
+
+    private static string FormatEta(TimeSpan eta)
+    {
+        if (eta.TotalHours >= 1)
+            return $"~{(int)eta.TotalHours}h{eta.Minutes:D2}m";
+        return $"~{eta.Minutes}m";
     }
 
     private static void DrawRow(Graphics g, int rowY, string label,
                                 double pct, TimeSpan resetIn, PaceState pace,
-                                Color textClr, Color trackClr, int barW, double expectedPct)
+                                Color textClr, Color trackClr, bool light, int barW, double expectedPct,
+                                string? extraText, Color? extraColor)
     {
         int contentX = PadL;
 
@@ -228,7 +274,7 @@ internal sealed class TaskbarWidget : IDisposable
 
         if (pct >= 0)
         {
-            DrawSolidBar(g, barX, rowY, pct, trackClr, barW, expectedPct);
+            DrawSolidBar(g, barX, rowY, pct, trackClr, light, barW, expectedPct);
 
             int textX = barX + barW + BarTextGap;
 
@@ -258,22 +304,45 @@ internal sealed class TaskbarWidget : IDisposable
             // Fixed-width pct field so the time column aligns across both rows;
             // 36px holds "100%" without clipping.
             const int pctFieldW = 36;
-            int timeLeft  = textX + pctFieldW;
-            int timeRight = textX + TextW - 12 - 9;      // small gap before the pace glyph (glyph center = textX+TextW-12)
-
-            g.DrawString(pctStr, boldFont, pctBrush,
-                         new RectangleF(textX, rowY, pctFieldW, BarH), pctFmt);
-            g.DrawString(timeStr, timeFont, timeBrush,
-                         new RectangleF(timeLeft, rowY, timeRight - timeLeft, BarH), timeFmt);
-
             int glyphX  = textX + TextW - 12;
             int glyphCY = rowY + BarH / 2;
+
+            if (extraText != null)
+            {
+                // Extra text (ETA or Opus) replaces the time field; drawn right-aligned before the glyph.
+                // pct% | extraText [glyph]
+                using var extraFont  = new Font("Segoe UI", 7.5f);
+                using var extraBrush = new SolidBrush(extraColor ?? Color.FromArgb(210, textClr));
+                int extraRight = glyphX - 4;
+                int extraLeft  = textX + pctFieldW;
+                using var extraFmt = new StringFormat
+                {
+                    Alignment     = StringAlignment.Far,
+                    LineAlignment = StringAlignment.Center,
+                    FormatFlags   = StringFormatFlags.NoClip,
+                };
+                g.DrawString(pctStr, boldFont, pctBrush,
+                             new RectangleF(textX, rowY, pctFieldW, BarH), pctFmt);
+                g.DrawString(extraText, extraFont, extraBrush,
+                             new RectangleF(extraLeft, rowY, extraRight - extraLeft, BarH), extraFmt);
+            }
+            else
+            {
+                int timeLeft  = textX + pctFieldW;
+                int timeRight = glyphX - 9;      // small gap before the pace glyph
+
+                g.DrawString(pctStr, boldFont, pctBrush,
+                             new RectangleF(textX, rowY, pctFieldW, BarH), pctFmt);
+                g.DrawString(timeStr, timeFont, timeBrush,
+                             new RectangleF(timeLeft, rowY, timeRight - timeLeft, BarH), timeFmt);
+            }
+
             DrawPaceGlyph(g, glyphX, glyphCY, pace);
         }
         else
         {
             // No data — draw empty bar + dashes
-            DrawSolidBar(g, barX, rowY, 0, trackClr, barW, 0);
+            DrawSolidBar(g, barX, rowY, 0, trackClr, light, barW, 0);
             int textX = barX + barW + BarTextGap;
             using var textFont  = new Font("Segoe UI", 8f);
             using var textBrush = new SolidBrush(Color.FromArgb(60, textClr));
@@ -322,7 +391,7 @@ internal sealed class TaskbarWidget : IDisposable
         _                => FillWarn,
     };
 
-    private static void DrawSolidBar(Graphics g, int x, int y, double pct, Color trackClr, int barW, double expectedPct)
+    private static void DrawSolidBar(Graphics g, int x, int y, double pct, Color trackClr, bool light, int barW, double expectedPct)
     {
         var barRect = new RectangleF(x, y, barW, BarH);
 
@@ -331,7 +400,7 @@ internal sealed class TaskbarWidget : IDisposable
         using (var trackBrush = new SolidBrush(trackClr))
             g.FillPath(trackBrush, path);
 
-        // Grey on-pace band (±5% around expected usage)
+        // Grey on-pace band (±5% around expected usage) — reduced alpha so it's subtle
         if (expectedPct > 0)
         {
             float lo = (float)Math.Clamp(expectedPct - 5, 0, 100);
@@ -340,7 +409,7 @@ internal sealed class TaskbarWidget : IDisposable
             float bandW = barW * (hi - lo) / 100f;
             var bandState = g.Save();
             g.SetClip(new RectangleF(bandX, y, bandW, BarH), System.Drawing.Drawing2D.CombineMode.Intersect);
-            using (var bandBrush = new SolidBrush(Color.FromArgb(130, 150, 150, 150)))
+            using (var bandBrush = new SolidBrush(Color.FromArgb(60, 150, 150, 150)))
                 g.FillPath(bandBrush, path);
             g.Restore(bandState);
         }
@@ -360,6 +429,18 @@ internal sealed class TaskbarWidget : IDisposable
         using var tickPen = new Pen(Color.FromArgb(90, 255, 255, 255), 1f);
         foreach (var t in new[] { 0.25f, 0.5f, 0.75f })
             g.DrawLine(tickPen, x + barW * t, y + 1, x + barW * t, y + BarH - 2);
+
+        // Expected-pct marker tick: 2px wide, full height — "should be here" indicator
+        if (expectedPct > 0)
+        {
+            float tickX = x + barW * (float)expectedPct / 100f;
+            // Clamp so the tick doesn't extend past bar edges
+            tickX = Math.Clamp(tickX, x + 1, x + barW - 2);
+            // Dark on light theme, light on dark theme, prominent alpha
+            var markerClr = light ? Color.FromArgb(200, 30, 30, 30) : Color.FromArgb(200, 220, 220, 220);
+            using var markerPen = new Pen(markerClr, 2f);
+            g.DrawLine(markerPen, tickX, y, tickX, y + BarH);
+        }
     }
 
     private static GraphicsPath RoundedRect(RectangleF r, int radius)
@@ -423,21 +504,61 @@ internal sealed class TaskbarWidget : IDisposable
             _fadeTimer.Start();
         }
 
-        internal static (int x, int y) ComputePosition()
+        internal static (int x, int y) ComputePosition(int? currentX = null, int? currentY = null)
         {
             IntPtr shell  = Win32Interop.FindWindowW("Shell_TrayWnd", null);
-            IntPtr notify = Win32Interop.FindWindowExW(shell, IntPtr.Zero, "TrayNotifyWnd", null);
-            Win32Interop.GetWindowRect(shell,  out var taskbar);
-            Win32Interop.GetWindowRect(notify, out var tray);
-            int x = Math.Max(0, tray.Right - WidgetW);
-            int y = taskbar.Top - WidgetH;
+            IntPtr notify = shell != IntPtr.Zero
+                ? Win32Interop.FindWindowExW(shell, IntPtr.Zero, "TrayNotifyWnd", null)
+                : IntPtr.Zero;
+
+            Win32Interop.GetWindowRect(shell, out var taskbar);
+            Win32Interop.RECT tray = default;
+            if (notify != IntPtr.Zero)
+                Win32Interop.GetWindowRect(notify, out tray);
+
+            bool taskbarValid = shell != IntPtr.Zero && taskbar.Bottom > taskbar.Top;
+
+            int x;
+            if (notify != IntPtr.Zero && tray.Right > 0)
+            {
+                // Normal case: anchor to right edge of notification area
+                x = tray.Right - WidgetW;
+            }
+            else if (taskbarValid && taskbar.Right > 0)
+            {
+                // Fallback: TrayNotifyWnd not found — anchor to taskbar right edge
+                x = taskbar.Right - WidgetW;
+            }
+            else
+            {
+                // Both lookups failed — keep the current X to avoid jumping to 0
+                x = currentX ?? 0;
+            }
+
+            x = Math.Max(0, x);
+            // If taskbar rect is invalid, preserve the current Y rather than placing the
+            // widget off-screen at a negative coordinate (taskbar.Top == 0 → y = -WidgetH).
+            int y = taskbarValid
+                ? taskbar.Top - WidgetH
+                : currentY ?? Math.Max(0, taskbar.Top - WidgetH);
+            y = Math.Max(0, y);
             return (x, y);
+        }
+
+        internal void AssertTopMost()
+        {
+            if (Handle == IntPtr.Zero) return;
+            Win32Interop.SetWindowPos(Handle, Win32Interop.HWND_TOPMOST,
+                                      0, 0, 0, 0,
+                                      Win32Interop.SWP_NOMOVE | Win32Interop.SWP_NOSIZE | Win32Interop.SWP_NOACTIVATE);
         }
 
         internal void Reposition()
         {
             if (Handle == IntPtr.Zero) return;
-            var (x, y) = ComputePosition();
+            // Pass current X and Y so fallback paths can preserve position instead of jumping to 0/-WidgetH
+            Win32Interop.GetWindowRect(Handle, out var current);
+            var (x, y) = ComputePosition(current.Left, current.Top);
             Win32Interop.MoveWindow(Handle, x, y, WidgetW, WidgetH, false);
         }
 
@@ -465,7 +586,7 @@ internal sealed class TaskbarWidget : IDisposable
         /// Renders widget content via UpdateLayeredWindow.
         /// SourceConstantAlpha drives the hover-fade effect; alpha=0 is naturally click-through.
         /// </summary>
-        public void Paint(bool lightMode, UsageData? data)
+        public void Paint(bool lightMode, UsageData? data, BurnRateTracker? burnRate = null)
         {
             if (Handle == IntPtr.Zero) return;
 
@@ -501,7 +622,7 @@ internal sealed class TaskbarWidget : IDisposable
                 using (var bmp = new Bitmap(WidgetW, WidgetH, WidgetW * 4, PixelFormat.Format32bppArgb, pBits))
                 using (var gfx = Graphics.FromImage(bmp))
                 {
-                    TaskbarWidget.Render(gfx, WidgetW, WidgetH, lightMode, data);
+                    TaskbarWidget.Render(gfx, WidgetW, WidgetH, lightMode, data, burnRate);
                 }
 
                 // Premultiply straight ARGB → premultiplied ARGB for UpdateLayeredWindow

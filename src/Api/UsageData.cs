@@ -27,6 +27,11 @@ public sealed class UsageData
     public decimal ExtraUsedDollars { get; set; }
     public decimal ExtraLimitDollars { get; set; }
 
+    // Opus weekly breakdown (optional — only present on plans that expose it)
+    public double? OpusPercent { get; set; }
+    public DateTime? OpusResetsAt { get; set; }
+    public bool HasOpus => OpusPercent.HasValue;
+
     public DateTime FetchedAt  { get; set; } = DateTime.Now;
     // True when weekly data was carried forward from a previous poll (API returned no seven_day).
     public bool WeeklyStale    { get; set; }

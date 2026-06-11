@@ -78,4 +78,33 @@ public class UsageFetcherTests
         Assert.False(data.HasWeekly);
         Assert.False(data.ExtraEnabled);
     }
+
+    [Fact]
+    public void Parse_WithOpusBlock_ParsesOpusPercent()
+    {
+        var json = """
+            {
+              "five_hour":     { "utilization": 42.5, "resets_at": "2025-02-17T18:00:00Z" },
+              "seven_day":     { "utilization": 13.0, "resets_at": "2025-02-19T07:00:00Z" },
+              "seven_day_opus":{ "utilization": 18.0, "resets_at": "2025-02-19T07:00:00Z" }
+            }
+            """;
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.True(data.HasOpus);
+        Assert.Equal(18.0, data.OpusPercent!.Value, precision: 4);
+        Assert.NotNull(data.OpusResetsAt);
+    }
+
+    [Fact]
+    public void Parse_WithoutOpusBlock_HasOpusFalse()
+    {
+        var json = """{ "five_hour": { "utilization": 30.0, "resets_at": "2025-02-17T18:00:00Z" } }""";
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.False(data.HasOpus);
+        Assert.Null(data.OpusPercent);
+    }
 }

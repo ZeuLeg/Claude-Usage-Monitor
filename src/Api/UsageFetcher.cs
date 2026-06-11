@@ -75,6 +75,15 @@ public sealed class UsageFetcher : IDisposable
                     data.WeeklyResetsAt = dt.ToUniversalTime();
         }
 
+        // seven_day_opus (optional — present only on plans with Opus model breakdown)
+        if (root.TryGetProperty("seven_day_opus", out var sdo))
+        {
+            if (sdo.TryGetProperty("utilization", out var u) && u.ValueKind == JsonValueKind.Number) data.OpusPercent = u.GetDouble();
+            if (sdo.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String)
+                if (DateTime.TryParse(r.GetString(), null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+                    data.OpusResetsAt = dt.ToUniversalTime();
+        }
+
         // extra_usage (Pay-as-you-go)
         if (root.TryGetProperty("extra_usage", out var ex))
         {

@@ -21,6 +21,12 @@ internal static class Win32Interop
     public const byte AC_SRC_OVER  = 0x00;
     public const byte AC_SRC_ALPHA = 0x01;
 
+    // ── SetWindowPos constants ──────────────────────────────────────────────
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    public const uint SWP_NOSIZE     = 0x0001;
+    public const uint SWP_NOMOVE     = 0x0002;
+    public const uint SWP_NOACTIVATE = 0x0010;
+
     // ── ShowWindow commands ─────────────────────────────────────────────────
     public const int SW_HIDE           = 0;
     public const int SW_SHOWNOACTIVATE = 4;
@@ -84,6 +90,10 @@ internal static class Win32Interop
 
     [DllImport("user32.dll")]
     public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter,
+                                           int X, int Y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);

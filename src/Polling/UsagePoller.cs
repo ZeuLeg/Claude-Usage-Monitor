@@ -36,8 +36,10 @@ internal sealed class UsagePoller : IDisposable
     private int _backoffMs = PollIntervalMs;
     private System.Windows.Forms.Timer? _resetTimer;
     private DateTime? _lastResetsAt;
+    private readonly BurnRateTracker _burnRate = new();
 
     public UsageData? LastData => _lastData;
+    public BurnRateTracker BurnRate => _burnRate;
 
     // ═══════════════════════════════════════
     // CONSTRUCTOR
@@ -142,6 +144,7 @@ internal sealed class UsagePoller : IDisposable
             _backoffMs = PollIntervalMs;
             _pollTimer.Interval = PollIntervalMs;
 
+            _burnRate.AddSample(DateTime.UtcNow, data.SessionPercent);
             ScheduleResetPoll(data);
             Updated?.Invoke(data);
         }
@@ -161,6 +164,7 @@ internal sealed class UsagePoller : IDisposable
                     _errors = 0;
                     _backoffMs = PollIntervalMs;
                     _pollTimer.Interval = PollIntervalMs;
+                    _burnRate.AddSample(DateTime.UtcNow, data.SessionPercent);
                     ScheduleResetPoll(data);
                     Updated?.Invoke(data);
                     Logger.Info("Reactive refresh succeeded — poll recovered.");

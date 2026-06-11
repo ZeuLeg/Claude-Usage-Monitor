@@ -243,4 +243,141 @@ public class NotificationEvaluatorTests
         var at = ev.Evaluate(Session(90)).ToList();
         Assert.Contains(at, e => e.Kind == NotifyKind.HighUsage);
     }
+
+    // Bug 3a: Local-timer reset — Reset fires as soon as resetsAt moment is in the past,
+    //         but only after a baseline has been established by the first poll.
+    [Fact]
+    public void Reset_FiresLocallyWhenResetsAtPassed_ExactlyOnce()
+    {
+        var fakeClock = new DateTime(2099, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        var resetsAt  = fakeClock.AddMinutes(5);   // still in the future at first poll
+
+        var ev = new NotificationEvaluator { UtcNow = () => fakeClock };
+
+        // First poll: resetsAt is still in the future → no Reset, but baseline is set.
+        var first = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.DoesNotContain(first, e => e.Kind == NotifyKind.Reset);
+
+        // Advance clock past resetsAt.
+        fakeClock = resetsAt.AddSeconds(10);
+        ev.UtcNow = () => fakeClock;
+
+        // Second poll: same resetsAt, now in the past → local-timer Reset fires once.
+        var second = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.Contains(second, e => e.Kind == NotifyKind.Reset);
+
+        // Third poll with the same resetsAt: must NOT fire again (dedupe).
+        var third = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.DoesNotContain(third, e => e.Kind == NotifyKind.Reset);
+    }
+
+    // Bug 3b: After local-timer reset fires, repeated polls carrying the same past
+    //         resetsAt must NOT fire Reset again (dedupe guard).
+    [Fact]
+    public void Reset_LocalTimer_DoesNotFireAgain_OnRepeatPollWithSameResetsAt()
+    {
+        var fakeClock = new DateTime(2099, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        var resetsAt  = fakeClock.AddMinutes(5);
+
+        var ev = new NotificationEvaluator { UtcNow = () => fakeClock };
+
+        // First poll: resetsAt still in the future → establishes baseline, no Reset.
+        var first = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.DoesNotContain(first, e => e.Kind == NotifyKind.Reset);
+
+        // Advance clock past resetsAt.
+        fakeClock = resetsAt.AddSeconds(10);
+        ev.UtcNow = () => fakeClock;
+
+        // Second poll after elapsed: local-timer Reset fires.
+        var second = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.Contains(second, e => e.Kind == NotifyKind.Reset);
+
+        // Next poll arrives with the same resetsAt (API hasn't switched windows yet).
+        // Must NOT fire Reset a second time.
+        var third = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.DoesNotContain(third, e => e.Kind == NotifyKind.Reset);
+
+        // Fourth poll: same resetsAt, same result.
+        var fourth = ev.Evaluate(Session(5, resetsAt)).ToList();
+        Assert.DoesNotContain(fourth, e => e.Kind == NotifyKind.Reset);
+    }
+
+    // Regression: first poll with a past resetsAt must NOT produce a spurious Reset.
+    // Before the fix, the local-timer path ran even with no baseline (_lastResetsAt == null),
+    // causing a false Reset notification on startup.
+    [Fact]
+    public void NoSpuriousReset_OnFirstPollWithPastResetsAt()
+    {
+        var ev = new NotificationEvaluator();
+        var pastResetsAt = DateTime.UtcNow.AddSeconds(-10);
+
+        var events = ev.Evaluate(Session(5, pastResetsAt)).ToList();
+
+        Assert.DoesNotContain(events, e => e.Kind == NotifyKind.Reset);
+    }
+
+    // ── Cooldown tests ────────────────────────────────────────────────────────
+
+    // Helper: builds a session UsageData with a resetsAt far in the future relative to the
+    // fake clock used in cooldown tests (clock starts at 2000-01-01, resetsAt at 2099-01-01).
+    private static UsageData CooldownSession(double pct) => Session(pct); // DefaultResetsAt = 2099
+
+    // With default cooldown=0, HighUsage fires only once per window.
+    [Fact]
+    public void Cooldown_Zero_FiresOnlyOnce()
+    {
+        // Fake clock well before DefaultResetsAt (2099-01-01) so local-timer reset never triggers.
+        var now = new DateTime(2000, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var ev  = new NotificationEvaluator { UtcNow = () => now, HighUsageCooldownMinutes = 0 };
+
+        var first  = ev.Evaluate(CooldownSession(91)).ToList();
+        var second = ev.Evaluate(CooldownSession(92)).ToList();
+        var third  = ev.Evaluate(CooldownSession(93)).ToList();
+
+        Assert.Single(first, e => e.Kind == NotifyKind.HighUsage);
+        Assert.DoesNotContain(second, e => e.Kind == NotifyKind.HighUsage);
+        Assert.DoesNotContain(third, e => e.Kind == NotifyKind.HighUsage);
+    }
+
+    // With cooldown>0, HighUsage re-fires after the cooldown period elapses.
+    [Fact]
+    public void Cooldown_RefiresAfterCooldownElapsed()
+    {
+        var now = new DateTime(2000, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var ev  = new NotificationEvaluator { UtcNow = () => now, HighUsageCooldownMinutes = 30 };
+
+        // First crossing: fires immediately.
+        var first = ev.Evaluate(CooldownSession(91)).ToList();
+        Assert.Single(first, e => e.Kind == NotifyKind.HighUsage);
+
+        // 20 min later: still in cooldown → no re-fire.
+        now = now.AddMinutes(20);
+        ev.UtcNow = () => now;
+        var middle = ev.Evaluate(CooldownSession(92)).ToList();
+        Assert.DoesNotContain(middle, e => e.Kind == NotifyKind.HighUsage);
+
+        // 31 min after first: cooldown elapsed → re-fires.
+        now = now.AddMinutes(11);   // total 31 min from first
+        ev.UtcNow = () => now;
+        var after = ev.Evaluate(CooldownSession(93)).ToList();
+        Assert.Single(after, e => e.Kind == NotifyKind.HighUsage);
+    }
+
+    // Dropping below threshold re-arms; next crossing fires again regardless of cooldown.
+    [Fact]
+    public void Cooldown_ReArmsAfterDropBelowThreshold()
+    {
+        var now = new DateTime(2000, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var ev  = new NotificationEvaluator { UtcNow = () => now, HighUsageCooldownMinutes = 60 };
+
+        ev.Evaluate(CooldownSession(91)).ToList(); // fires, arms cooldown
+
+        // Drop below threshold → re-arms warnedHigh flag and clears cooldown timestamp.
+        ev.Evaluate(CooldownSession(80)).ToList();
+
+        // Next crossing fires immediately even though cooldown would have prevented it.
+        var rearm = ev.Evaluate(CooldownSession(92)).ToList();
+        Assert.Single(rearm, e => e.Kind == NotifyKind.HighUsage);
+    }
 }
