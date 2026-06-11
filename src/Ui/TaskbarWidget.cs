@@ -95,6 +95,30 @@ internal sealed class TaskbarWidget : IDisposable
         Redraw();
     }
 
+    /// <summary>Hides the widget window (signed-out state).</summary>
+    public void HideWidget()
+    {
+        if (_nw.Handle != IntPtr.Zero)
+        {
+            _timer.Stop();
+            _topmostTimer.Stop();
+            Win32Interop.ShowWindow(_nw.Handle, Win32Interop.SW_HIDE);
+        }
+    }
+
+    /// <summary>Shows the widget window and re-asserts position (signed-in state).</summary>
+    public void ShowWidget()
+    {
+        if (_nw.Handle != IntPtr.Zero)
+        {
+            Win32Interop.ShowWindow(_nw.Handle, Win32Interop.SW_SHOWNOACTIVATE);
+            _nw.Reposition();
+            _nw.AssertTopMost();
+            _topmostTimer.Start();
+            Redraw(); // also restarts _timer via ScheduleNextRedraw
+        }
+    }
+
     public void Dispose()
     {
         _topmostTimer.Stop();

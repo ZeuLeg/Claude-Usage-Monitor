@@ -28,7 +28,10 @@ internal static class UpdateChecker
         {
             var json   = await _http.GetStringAsync(ApiUrl);
             using var doc = JsonDocument.Parse(json);
-            var tag    = doc.RootElement.GetProperty("tag_name").GetString()?.TrimStart('v');
+            if (!doc.RootElement.TryGetProperty("tag_name", out var tagProp) ||
+                tagProp.ValueKind != JsonValueKind.String)
+                return null;
+            var tag = tagProp.GetString()?.TrimStart('v');
             if (tag == null) return null;
 
             var current = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";

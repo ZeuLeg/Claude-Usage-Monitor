@@ -171,6 +171,10 @@ public static class CredentialReader
             if (!oauth.TryGetProperty("accessToken", out var tokenProp))
                 return null;
 
+            // Guard against explicit JSON null: { "accessToken": null }
+            if (tokenProp.ValueKind != JsonValueKind.String)
+                return null;
+
             var token = tokenProp.GetString();
             if (string.IsNullOrWhiteSpace(token)) return null;
 

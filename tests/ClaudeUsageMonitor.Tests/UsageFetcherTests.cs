@@ -64,6 +64,60 @@ public class UsageFetcherTests
     }
 
     [Fact]
+    public void Parse_FiveHourNull_NoException_SessionZero()
+    {
+        // API may return "five_hour": null when the window is inactive
+        var json = """{ "five_hour": null, "seven_day": { "utilization": 10.0 } }""";
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.Equal(0.0, data.SessionPercent);
+        Assert.True(data.HasWeekly);
+    }
+
+    [Fact]
+    public void Parse_SevenDayNull_NoException_HasWeeklyFalse()
+    {
+        // API may return "seven_day": null on plans without weekly tracking
+        var json = """{ "five_hour": { "utilization": 50.0 }, "seven_day": null }""";
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.Equal(50.0, data.SessionPercent);
+        Assert.False(data.HasWeekly);
+    }
+
+    [Fact]
+    public void Parse_SevenDayOpusNull_NoException_HasOpusFalse()
+    {
+        // API may return "seven_day_opus": null on plans without Opus breakdown
+        var json = """
+            {
+              "five_hour":      { "utilization": 30.0 },
+              "seven_day":      { "utilization": 20.0 },
+              "seven_day_opus": null
+            }
+            """;
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.False(data.HasOpus);
+        Assert.Null(data.OpusPercent);
+    }
+
+    [Fact]
+    public void Parse_AllBlocksNull_NoException_AllDefaults()
+    {
+        var json = """{ "five_hour": null, "seven_day": null, "seven_day_opus": null }""";
+
+        var data = UsageFetcher.Parse(json);
+
+        Assert.Equal(0.0, data.SessionPercent);
+        Assert.False(data.HasWeekly);
+        Assert.False(data.HasOpus);
+    }
+
+    [Fact]
     public void Parse_InvalidJson_ThrowsException()
     {
         Assert.ThrowsAny<System.Text.Json.JsonException>(() => UsageFetcher.Parse("not json"));

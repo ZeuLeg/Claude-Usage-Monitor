@@ -56,8 +56,8 @@ public sealed class UsageFetcher : IDisposable
         var root = doc.RootElement;
         var data = new UsageData { FetchedAt = DateTime.Now };
 
-        // five_hour
-        if (root.TryGetProperty("five_hour", out var fh))
+        // five_hour — skip if key is explicitly null (API may return "five_hour": null)
+        if (root.TryGetProperty("five_hour", out var fh) && fh.ValueKind == JsonValueKind.Object)
         {
             if (fh.TryGetProperty("utilization", out var u) && u.ValueKind == JsonValueKind.Number) data.SessionPercent = u.GetDouble();
             if (fh.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String)
@@ -65,8 +65,8 @@ public sealed class UsageFetcher : IDisposable
                     data.SessionResetsAt = dt.ToUniversalTime();
         }
 
-        // seven_day
-        if (root.TryGetProperty("seven_day", out var sd))
+        // seven_day — skip if key is explicitly null
+        if (root.TryGetProperty("seven_day", out var sd) && sd.ValueKind == JsonValueKind.Object)
         {
             data.HasWeekly = true;
             if (sd.TryGetProperty("utilization", out var u) && u.ValueKind == JsonValueKind.Number) data.WeeklyPercent = u.GetDouble();
@@ -75,8 +75,8 @@ public sealed class UsageFetcher : IDisposable
                     data.WeeklyResetsAt = dt.ToUniversalTime();
         }
 
-        // seven_day_opus (optional — present only on plans with Opus model breakdown)
-        if (root.TryGetProperty("seven_day_opus", out var sdo))
+        // seven_day_opus (optional — present only on plans with Opus model breakdown; skip if null)
+        if (root.TryGetProperty("seven_day_opus", out var sdo) && sdo.ValueKind == JsonValueKind.Object)
         {
             if (sdo.TryGetProperty("utilization", out var u) && u.ValueKind == JsonValueKind.Number) data.OpusPercent = u.GetDouble();
             if (sdo.TryGetProperty("resets_at", out var r) && r.ValueKind == JsonValueKind.String)

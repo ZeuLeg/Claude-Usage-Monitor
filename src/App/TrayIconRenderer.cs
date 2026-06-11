@@ -39,6 +39,16 @@ internal sealed class TrayIconRenderer : IDisposable
         Swap(MakeIconVisual(data, dim: true), $"{reason}\nLast updated: {data.FetchedAt:HH:mm}");
     }
 
+    /// <summary>
+    /// Neutral grey icon shown when no credentials are present.
+    /// Intentionally calm — no red/amber — so it doesn't look like an error.
+    /// </summary>
+    public void ShowSignedOut()
+    {
+        if (_invoker.InvokeRequired) { _invoker.BeginInvoke(ShowSignedOut); return; }
+        Swap(MakeIcon("–", Palette.Gray), "Not signed in — run `claude` to sign in");
+    }
+
     private void Swap((Icon icon, IntPtr hicon) made, string tooltip)
     {
         var old       = _notify.Icon;

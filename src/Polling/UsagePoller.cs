@@ -16,6 +16,13 @@ internal sealed class UsagePoller : IDisposable
     public event Action? AuthExpired;
     public event Action<UsageData?, string, int, bool>? Failed;
 
+    /// <summary>
+    /// Raised when no credentials are found OR when the token is expired and refresh failed.
+    /// Widget should be hidden and tray should show the neutral signed-out state.
+    /// Supersedes separate TokenMissing / AuthExpired notifications for UI purposes.
+    /// </summary>
+    public event Action? SignedOut;
+
     // ═══════════════════════════════════════
     // CONSTANTS & FIELDS
     // ═══════════════════════════════════════
@@ -111,12 +118,14 @@ internal sealed class UsagePoller : IDisposable
                     System.Diagnostics.Debug.WriteLine($"[Poll] Credentials not found. File: {credFile}, Exists: {File.Exists(credFile)}");
 #endif
                     TokenMissing?.Invoke("No OAuth token found.\nPlease run 'claude login'.");
+                    SignedOut?.Invoke();
                 }
                 else
                 {
                     // Credentials exist but refresh failed — ask user to login
                     Logger.Error("Token refresh failed; credentials may be revoked.");
                     AuthExpired?.Invoke();
+                    SignedOut?.Invoke();
                 }
                 return;
             }
@@ -195,6 +204,7 @@ internal sealed class UsagePoller : IDisposable
                 // Refresh was actually attempted and failed — token is genuinely invalid.
                 Logger.Error("OAuth token expired or invalid; refresh did not help. Run 'claude login'.");
                 AuthExpired?.Invoke();
+                SignedOut?.Invoke();
             }
         }
         catch (Exception ex)

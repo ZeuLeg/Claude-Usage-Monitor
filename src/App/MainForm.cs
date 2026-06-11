@@ -9,8 +9,6 @@ public sealed class MainForm : Form
     private readonly TrayIconRenderer _tray;
     private readonly UsagePoller _poller;
 
-    private bool _tokenWarningShown;
-    private bool _authWarningShown;
     private readonly Notifier _notifier;
     private readonly NotificationEvaluator _evaluator;
     private TaskbarWidget? _taskbarWidget;
@@ -85,31 +83,30 @@ public sealed class MainForm : Form
 
         _poller.Updated += data =>
         {
-            _tray.ShowUsage(data);
-            _taskbarWidget?.Update(data, _poller.BurnRate);
-            _tokenWarningShown = false;
-            _authWarningShown = false;
             foreach (var ev in _evaluator.Evaluate(data))
                 _notifier.Dispatch(ev);
+            if (!IsHandleCreated) return;
+            BeginInvoke(() =>
+            {
+                _tray.ShowUsage(data);
+                _taskbarWidget?.ShowWidget();
+                _taskbarWidget?.Update(data, _poller.BurnRate);
+            });
         };
         _poller.TokenMissing += diag =>
         {
-            _tray.ShowText("!", Palette.Crit, diag);
-            if (!_tokenWarningShown)
-            {
-                _tokenWarningShown = true;
-                _trayIcon.ShowBalloonTip(10000, "Claude Usage Monitor", diag, ToolTipIcon.Warning);
-            }
+            // Log-only; SignedOut event handles UI (tray + widget hide).
+            Logger.Warn($"[Auth] {diag}");
         };
         _poller.AuthExpired += () =>
         {
-            _tray.ShowText("AUTH", Palette.Crit, "OAuth token expired.\nRun 'claude login'.");
-            if (!_authWarningShown)
-            {
-                _authWarningShown = true;
-                _trayIcon.ShowBalloonTip(8000, "Token expired",
-                    "Please run 'claude login' in the terminal.", ToolTipIcon.Warning);
-            }
+            // Log-only; SignedOut event handles UI (tray + widget hide).
+            Logger.Warn("[Auth] OAuth token expired. Run 'claude login'.");
+        };
+        _poller.SignedOut += () =>
+        {
+            if (!IsHandleCreated) return;
+            BeginInvoke(() => { _taskbarWidget?.HideWidget(); _tray.ShowSignedOut(); });
         };
         _poller.Failed += (last, msg, count, isConnectivity) =>
         {
@@ -118,11 +115,8 @@ public sealed class MainForm : Form
             else if (isConnectivity)
                 _tray.ShowText("---", Palette.Gray, "Waiting for connection…");
             else
-            {
                 _tray.ShowText("ERR", Palette.Crit, $"Error: {msg}");
-                if (count >= 3)
-                    _trayIcon.ShowBalloonTip(5000, "Error", msg, ToolTipIcon.Error);
-            }
+            // No balloon for poll failures — tray icon + tooltip + log is sufficient.
         };
 
         // Load event won't fire because SetVisibleCore(false) prevents visibility.
