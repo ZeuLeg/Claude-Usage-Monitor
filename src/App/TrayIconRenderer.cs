@@ -72,61 +72,59 @@ internal sealed class TrayIconRenderer : IDisposable
         return cut > 0 ? text[..cut] : text[..127];
     }
 
-    private static (Icon icon, IntPtr hicon) MakeIcon(string text, Color color)
+    /// <summary>Renders a text fallback icon at the given size (default 32). Exposed for testing.</summary>
+    internal static Bitmap RenderTextIcon(string text, Color color, int sz = 32)
     {
-        const int sz = 32;
-        using var bmp = new Bitmap(sz, sz);
+        var bmp = new Bitmap(sz, sz);
         using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         g.Clear(Color.Transparent);
 
         using var bg = new SolidBrush(Color.FromArgb(30, 30, 30));
         var r = new Rectangle(0, 0, sz, sz);
         using var rr = new GraphicsPath();
-        rr.AddArc(r.X, r.Y, 8, 8, 180, 90);
-        rr.AddArc(r.Right - 8, r.Y, 8, 8, 270, 90);
-        rr.AddArc(r.Right - 8, r.Bottom - 8, 8, 8, 0, 90);
-        rr.AddArc(r.X, r.Bottom - 8, 8, 8, 90, 90);
+        rr.AddArc(r.X, r.Y, sz / 4, sz / 4, 180, 90);
+        rr.AddArc(r.Right - sz / 4, r.Y, sz / 4, sz / 4, 270, 90);
+        rr.AddArc(r.Right - sz / 4, r.Bottom - sz / 4, sz / 4, sz / 4, 0, 90);
+        rr.AddArc(r.X, r.Bottom - sz / 4, sz / 4, sz / 4, 90, 90);
         rr.CloseFigure();
         g.FillPath(bg, rr);
 
-        using var font = new Font("Segoe UI", text.Length > 3 ? 7f : 9f, FontStyle.Bold);
+        float fontSize = sz <= 32
+            ? (text.Length > 3 ? 7f : 9f)
+            : (text.Length > 3 ? 14f : 18f);
+        using var font = new Font("Segoe UI", fontSize, FontStyle.Bold);
         using var brush = new SolidBrush(color);
         using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         g.DrawString(text, font, brush, new RectangleF(0, 0, sz, sz), fmt);
-
-        var hicon = bmp.GetHicon();
-        return (Icon.FromHandle(hicon), hicon);
+        return bmp;
     }
 
-    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data, bool dim = false)
+    /// <summary>Renders the dual-ring usage icon bitmap. Exposed for testing.</summary>
+    internal static Bitmap RenderUsageIcon(UsageData data, bool dim = false, int sz = 64)
     {
-        // Rendered at 64px (downscaled by the tray) for crisper, bolder rings.
-        const int sz = 64;
-        int sessA = dim ? 90 : 240;   // session arc alpha
-        int weekA = dim ? 80 : 220;   // weekly arc alpha
-        const float outerInset = 6f,  outerPen = 7f;
-        const float innerInset = 19f, innerPen = 5.5f;
+        int sessA = dim ? 90 : 240;
+        int weekA = dim ? 80 : 220;
+        float outerInset = sz * 6f / 64f, outerPen = sz * 7f / 64f;
+        float innerInset = sz * 19f / 64f, innerPen = sz * 5.5f / 64f;
         float outerD = sz - 2 * outerInset;
         float innerD = sz - 2 * innerInset;
 
-        using var bmp = new Bitmap(sz, sz);
-        using var g   = Graphics.FromImage(bmp);
+        var bmp = new Bitmap(sz, sz);
+        using var g = Graphics.FromImage(bmp);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Color.Transparent);
 
         using (var bg = new SolidBrush(Color.FromArgb(225, 22, 22, 30)))
             g.FillEllipse(bg, 1, 1, sz - 2, sz - 2);
 
-        // Dim track rings
         using (var tp = new Pen(Color.FromArgb(55, 200, 200, 200), outerPen))
             g.DrawEllipse(tp, outerInset, outerInset, outerD, outerD);
         if (data.HasWeekly)
             using (var twp = new Pen(Color.FromArgb(45, 200, 200, 200), innerPen))
                 g.DrawEllipse(twp, innerInset, innerInset, innerD, innerD);
 
-        // Session arc (outer)
         if (data.SessionPercent > 0)
         {
             var sc = data.SessionPercent >= 90 ? Palette.Crit : data.SessionPercent >= 75 ? Palette.Warn : Palette.Ok;
@@ -136,8 +134,6 @@ internal sealed class TrayIconRenderer : IDisposable
                       -90f, (float)(Math.Min(data.SessionPercent, 100) / 100.0 * 360.0));
         }
 
-        // Weekly arc (inner) — cyan "reference" color by default (matches the popup's
-        // weekly markers), but escalates to amber/red once weekly usage gets critical.
         if (data.HasWeekly && data.WeeklyPercent > 0)
         {
             var wc = data.WeeklyPercent >= 90 ? Palette.Crit : data.WeeklyPercent >= 75 ? Palette.Warn : Palette.Weekly;
@@ -149,8 +145,21 @@ internal sealed class TrayIconRenderer : IDisposable
 
         if (dim)
             using (var dot = new SolidBrush(Color.FromArgb(230, 130, 130, 140)))
-                g.FillEllipse(dot, sz - 18, sz - 18, 13, 13);
+                g.FillEllipse(dot, sz - sz * 18f / 64f, sz - sz * 18f / 64f, sz * 13f / 64f, sz * 13f / 64f);
 
+        return bmp;
+    }
+
+    private static (Icon icon, IntPtr hicon) MakeIcon(string text, Color color)
+    {
+        using var bmp = RenderTextIcon(text, color);
+        var hicon = bmp.GetHicon();
+        return (Icon.FromHandle(hicon), hicon);
+    }
+
+    private static (Icon icon, IntPtr hicon) MakeIconVisual(UsageData data, bool dim = false)
+    {
+        using var bmp = RenderUsageIcon(data, dim);
         var hicon = bmp.GetHicon();
         return (Icon.FromHandle(hicon), hicon);
     }

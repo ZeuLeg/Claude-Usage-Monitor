@@ -195,7 +195,7 @@ internal sealed class TaskbarWidget : IDisposable
     {
         g.Clear(Color.Transparent);
         g.SmoothingMode      = SmoothingMode.AntiAlias;
-        g.TextRenderingHint  = TextRenderingHint.ClearTypeGridFit;
+        g.TextRenderingHint  = TextRenderingHint.AntiAliasGridFit;
 
         // Background: near-opaque so the idle widget stays readable. Seeing what's
         // behind it is handled by the hover-fade (alpha→0), not by a translucent bg.
@@ -263,10 +263,17 @@ internal sealed class TaskbarWidget : IDisposable
 
         if (data.HasWeekly)
         {
-            string? opusSuffix = data.HasOpus ? $"· Op {data.OpusPercent!.Value:0}" : null;
+            // Opus: show "3d 3h · Op 7" — time and Opus combined in the extra field.
+            // Expanded textW (+20px) so the combined string fits without widening the window.
+            string? opusSuffix = data.HasOpus
+                ? (data.WeeklyResetIn > TimeSpan.Zero
+                    ? $"{FormatSpanShort(data.WeeklyResetIn)} · Op {data.OpusPercent!.Value:0}"
+                    : $"Op {data.OpusPercent!.Value:0}")
+                : null;
+            int row2TextW = data.HasOpus ? TextW + 20 : TextW;
             DrawRow(g, Row2Y, "7d", data.WeeklyPercent, data.WeeklyResetIn, data.WeeklyPaceState,
                     textClr, trackClr, light, effectiveBarW, data.WeeklyExpectedPercent,
-                    opusSuffix, null);
+                    opusSuffix, null, row2TextW);
         }
         else
         {
@@ -285,7 +292,7 @@ internal sealed class TaskbarWidget : IDisposable
     private static void DrawRow(Graphics g, int rowY, string label,
                                 double pct, TimeSpan resetIn, PaceState pace,
                                 Color textClr, Color trackClr, bool light, int barW, double expectedPct,
-                                string? extraText, Color? extraColor)
+                                string? extraText, Color? extraColor, int textW = TextW)
     {
         int contentX = PadL;
 
@@ -333,17 +340,21 @@ internal sealed class TaskbarWidget : IDisposable
 
             // Fixed-width pct field so the time column aligns across both rows;
             // 36px holds "100%" without clipping.
+            // Time field: sized to the widest possible string ("23h 59m") so "m" never clips.
             const int pctFieldW = 36;
-            int glyphX  = textX + TextW - 12;
+            using var measureFont = new Font("Segoe UI", 8f);
+            int timeFieldW = (int)Math.Ceiling(g.MeasureString("23h 59m", measureFont).Width) + 2;
+            int glyphX  = textX + textW - 12;
             int glyphCY = rowY + BarH / 2;
 
             if (extraText != null)
             {
-                // Extra text (ETA or Opus) replaces the time field; drawn right-aligned before the glyph.
-                // pct% | extraText [glyph]
+                // For ETA (Row1): extraText replaces the time field entirely.
+                // For Opus (Row2): extraText already contains "timeStr · Op N" combined.
+                // Drawn right-aligned before the glyph with a 7px gap so ETA glyph has breathing room.
                 using var extraFont  = new Font("Segoe UI", 7.5f);
                 using var extraBrush = new SolidBrush(extraColor ?? Color.FromArgb(210, textClr));
-                int extraRight = glyphX - 4;
+                int extraRight = glyphX - 7;
                 int extraLeft  = textX + pctFieldW;
                 using var extraFmt = new StringFormat
                 {
@@ -359,7 +370,7 @@ internal sealed class TaskbarWidget : IDisposable
             else
             {
                 int timeLeft  = textX + pctFieldW;
-                int timeRight = glyphX - 9;      // small gap before the pace glyph
+                int timeRight = timeLeft + timeFieldW;
 
                 g.DrawString(pctStr, boldFont, pctBrush,
                              new RectangleF(textX, rowY, pctFieldW, BarH), pctFmt);
@@ -455,21 +466,14 @@ internal sealed class TaskbarWidget : IDisposable
             g.Restore(state);
         }
 
-        // Tick marks at 25%, 50%, 75%
-        using var tickPen = new Pen(Color.FromArgb(90, 255, 255, 255), 1f);
-        foreach (var t in new[] { 0.25f, 0.5f, 0.75f })
-            g.DrawLine(tickPen, x + barW * t, y + 1, x + barW * t, y + BarH - 2);
-
-        // Expected-pct marker tick: 2px wide, full height — "should be here" indicator
+        // Expected-pct notch: 1px wide, inset 2px from bar top/bottom — subtle "should be here" mark
         if (expectedPct > 0)
         {
             float tickX = x + barW * (float)expectedPct / 100f;
-            // Clamp so the tick doesn't extend past bar edges
             tickX = Math.Clamp(tickX, x + 1, x + barW - 2);
-            // Dark on light theme, light on dark theme, prominent alpha
-            var markerClr = light ? Color.FromArgb(200, 30, 30, 30) : Color.FromArgb(200, 220, 220, 220);
-            using var markerPen = new Pen(markerClr, 2f);
-            g.DrawLine(markerPen, tickX, y, tickX, y + BarH);
+            var markerClr = light ? Color.FromArgb(110, 30, 30, 30) : Color.FromArgb(110, 220, 220, 220);
+            using var markerPen = new Pen(markerClr, 1f);
+            g.DrawLine(markerPen, tickX, y + 2, tickX, y + BarH - 2);
         }
     }
 

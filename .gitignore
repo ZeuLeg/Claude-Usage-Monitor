@@ -15,3 +15,6 @@ desktop.ini
 
 # Claude Code agent memory / local state
 .claude/
+
+# Widget snapshot test output
+tests/**/_snapshots/
