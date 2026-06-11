@@ -17,7 +17,7 @@ internal static class NotificationsDialog
             BackColor = Bg, ForeColor = Color.White,
             Font = new Font("Segoe UI", 10f), TopMost = true,
             ShowInTaskbar = false,
-            ClientSize = new Size(440, 338),
+            ClientSize = new Size(440, 368),
             StartPosition = FormStartPosition.CenterScreen,
         };
 
@@ -103,8 +103,19 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(chkReset);
 
+        var chkDepletion = new CheckBox
+        {
+            Text = "Pace warning (will hit limit before reset)",
+            Location = new Point(28, 278),
+            Checked = Settings.Current.NotifyDepletion,
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            AutoSize = true,
+        };
+        dlg.Controls.Add(chkDepletion);
+
         // ── Footer buttons ──────────────────────────────
-        var btnTest = FooterButton("Test Notification", 20, 294, 140, FieldBg, Color.White);
+        var btnTest = FooterButton("Test Notification", 20, 324, 140, FieldBg, Color.White);
         btnTest.Click += async (_, _) =>
         {
             try { await notifier.SendTestAsync(); }
@@ -115,7 +126,7 @@ internal static class NotificationsDialog
             "Sends a test alert — always shows a Windows balloon;\nalso sends to phone via ntfy if a topic is configured.");
         dlg.Controls.Add(btnTest);
 
-        var btnSave = FooterButton("Save", 250, 294, 80, Accent, Color.FromArgb(15, 15, 15));
+        var btnSave = FooterButton("Save", 250, 324, 80, Accent, Color.FromArgb(15, 15, 15));
         btnSave.Click += (_, _) =>
         {
             Settings.Current.NtfyTopic = ntfyTopicBox.Text;
@@ -123,13 +134,14 @@ internal static class NotificationsDialog
             Settings.Current.NotifyHighUsage = chkHighUsage.Checked;
             Settings.Current.NotifyLimitReached = chkLimitReached.Checked;
             Settings.Current.NotifyReset = chkReset.Checked;
+            Settings.Current.NotifyDepletion = chkDepletion.Checked;
             Settings.Current.HighUsageThreshold = slider.Value;
             Settings.Current.Save();
             dlg.Close();
         };
         dlg.Controls.Add(btnSave);
 
-        var btnCancel = FooterButton("Cancel", 340, 294, 80, FieldBg, Color.White);
+        var btnCancel = FooterButton("Cancel", 340, 324, 80, FieldBg, Color.White);
         btnCancel.Click += (_, _) => dlg.Close();
         dlg.Controls.Add(btnCancel);
 

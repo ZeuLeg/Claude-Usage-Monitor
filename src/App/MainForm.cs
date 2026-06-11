@@ -83,7 +83,8 @@ public sealed class MainForm : Form
 
         _poller.Updated += data =>
         {
-            foreach (var ev in _evaluator.Evaluate(data))
+            var sessionEta = _poller.BurnRate.EstimateToFull(data.SessionPercent);
+            foreach (var ev in _evaluator.Evaluate(data, sessionEta))
                 _notifier.Dispatch(ev);
             if (!IsHandleCreated) return;
             BeginInvoke(() =>

@@ -31,6 +31,7 @@ internal class Settings
     public bool NotifyLimitReached { get; set; } = true;
     public bool NotifyReset { get; set; } = true;
     public bool NotifyHighUsage { get; set; } = true;
+    public bool NotifyDepletion { get; set; } = true;
     public int HighUsageThreshold { get; set; } = 90;
     /// <summary>
     /// Minutes between repeated HighUsage notifications while usage stays above the threshold.

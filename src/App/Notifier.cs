@@ -18,6 +18,7 @@ internal sealed class Notifier
             NotifyKind.HighUsage    => Settings.Current.NotifyHighUsage,
             NotifyKind.LimitReached => Settings.Current.NotifyLimitReached,
             NotifyKind.Reset        => Settings.Current.NotifyReset,
+            NotifyKind.DepletionSoon => Settings.Current.NotifyDepletion,
             _                       => false,
         };
 
@@ -27,16 +28,22 @@ internal sealed class Notifier
         if (!string.IsNullOrEmpty(Settings.Current.NtfyTopic)) channels.Append("+ntfy");
         Logger.Info($"Notified {ev.Kind} {ev.Quota} via {channels}");
 
+        var depletionMsg = ev.EtaToFull.HasValue
+            ? $"At the current pace the 5h limit will be hit in ~{UsageData.FormatSpan(ev.EtaToFull.Value)} (resets in {ev.ResetText})."
+            : $"{ev.Quota} will likely hit the limit before the session resets in {ev.ResetText}.";
+
         var message = ev.Kind switch
         {
-            NotifyKind.HighUsage    => $"{ev.Quota} at {ev.Percent:0}% — resets in {ev.ResetText}.",
-            NotifyKind.LimitReached => $"{ev.Quota} limit reached ({ev.Percent:0}%) — resets in {ev.ResetText}.",
-            NotifyKind.Reset        => $"{ev.Quota} reset — quota renewed.",
-            _                       => string.Empty,
+            NotifyKind.HighUsage     => $"{ev.Quota} at {ev.Percent:0}% — resets in {ev.ResetText}.",
+            NotifyKind.LimitReached  => $"{ev.Quota} limit reached ({ev.Percent:0}%) — resets in {ev.ResetText}.",
+            NotifyKind.Reset         => $"{ev.Quota} reset — quota renewed.",
+            NotifyKind.DepletionSoon => depletionMsg,
+            _                        => string.Empty,
         };
 
+        var title = ev.Kind == NotifyKind.DepletionSoon ? "Pace warning" : "Claude Usage Monitor";
         var icon = ev.Kind == NotifyKind.LimitReached ? ToolTipIcon.Warning : ToolTipIcon.Info;
-        _tray.ShowBalloonTip(7000, "Claude Usage Monitor", message, icon);
+        _tray.ShowBalloonTip(7000, title, message, icon);
 
         if (!string.IsNullOrEmpty(Settings.Current.NtfyTopic))
             _ = SendNtfyAsync(message);

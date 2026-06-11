@@ -317,6 +317,173 @@ public class NotificationEvaluatorTests
         Assert.DoesNotContain(events, e => e.Kind == NotifyKind.Reset);
     }
 
+    // ── DepletionSoon tests ───────────────────────────────────────────────────
+
+    private static DateTime FutureClock => new DateTime(2000, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+
+    // ETA < remaining time + pct>=50 → fires once
+    [Fact]
+    public void DepletionSoon_Fires_WhenEtaLessThanRemaining_AndPctAbove50()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1); // hits limit in 1h, resets in 2h
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList(); // establish baseline
+
+        var result = ev.Evaluate(Session(60, resetsAt), eta).ToList();
+        Assert.Contains(result, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // Same window: DepletionSoon fires only once
+    [Fact]
+    public void DepletionSoon_FiresOnlyOnce_PerWindow()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList(); // establish baseline
+
+        var first = ev.Evaluate(Session(60, resetsAt), eta).ToList();
+        Assert.Contains(first, e => e.Kind == NotifyKind.DepletionSoon);
+
+        var second = ev.Evaluate(Session(65, resetsAt), eta).ToList();
+        Assert.DoesNotContain(second, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // pct < 50 → does not fire
+    [Fact]
+    public void DepletionSoon_DoesNotFire_WhenPctBelow50()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(40, resetsAt)).ToList();
+
+        var result = ev.Evaluate(Session(40, resetsAt), eta).ToList();
+        Assert.DoesNotContain(result, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // ETA >= remaining → does not fire
+    [Fact]
+    public void DepletionSoon_DoesNotFire_WhenEtaGreaterThanRemaining()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(1);
+        var eta = TimeSpan.FromHours(2); // hits limit in 2h, but resets in 1h — fine
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList();
+
+        var result = ev.Evaluate(Session(60, resetsAt), eta).ToList();
+        Assert.DoesNotContain(result, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // After reset (new window), re-arms and fires again
+    [Fact]
+    public void DepletionSoon_ReArms_AfterReset()
+    {
+        var now = FutureClock;
+        var resetsAt1 = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt1)).ToList(); // baseline
+
+        var first = ev.Evaluate(Session(60, resetsAt1), eta).ToList();
+        Assert.Contains(first, e => e.Kind == NotifyKind.DepletionSoon);
+
+        // New window arrives (API-driven reset)
+        var resetsAt2 = resetsAt1.AddHours(5);
+        ev.Evaluate(Session(5, resetsAt2)).ToList(); // reset clears flag
+
+        var second = ev.Evaluate(Session(60, resetsAt2), eta).ToList();
+        Assert.Contains(second, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // sessionEtaToFull null → never fires
+    [Fact]
+    public void DepletionSoon_DoesNotFire_WhenEtaIsNull()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList();
+
+        var result = ev.Evaluate(Session(60, resetsAt)).ToList(); // no eta param
+        Assert.DoesNotContain(result, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // EtaToFull is populated in the event payload
+    [Fact]
+    public void DepletionSoon_Event_CarriesEtaToFull()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+        var eta = TimeSpan.FromMinutes(32);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList();
+
+        var result = ev.Evaluate(Session(60, resetsAt), eta).ToList();
+        var depEvent = result.FirstOrDefault(e => e.Kind == NotifyKind.DepletionSoon);
+        Assert.NotNull(depEvent);
+        Assert.Equal(eta, depEvent!.EtaToFull);
+    }
+
+    // ETA fluctuates (value → null → value): flag must be preserved; second fire must NOT happen
+    [Fact]
+    public void DepletionSoon_NoFlapping_WhenEtaFluctuates()
+    {
+        var now = FutureClock;
+        var resetsAt = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt)).ToList(); // establish baseline
+
+        // First call with ETA: fires and sets _warnedDepletion
+        var first = ev.Evaluate(Session(60, resetsAt), eta).ToList();
+        Assert.Contains(first, e => e.Kind == NotifyKind.DepletionSoon);
+
+        // ETA disappears (null): flag must remain set — no second fire possible
+        var second = ev.Evaluate(Session(60, resetsAt)).ToList();
+        Assert.DoesNotContain(second, e => e.Kind == NotifyKind.DepletionSoon);
+
+        // ETA reappears: flag still set — must NOT fire again
+        var third = ev.Evaluate(Session(65, resetsAt), eta).ToList();
+        Assert.DoesNotContain(third, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
+    // Reset and DepletionSoon must not fire on the same Evaluate call
+    [Fact]
+    public void DepletionSoon_DoesNotFire_OnSameTurnAsReset()
+    {
+        var now = FutureClock;
+        var resetsAt1 = now.AddHours(2);
+        var eta = TimeSpan.FromHours(1);
+
+        var ev = new NotificationEvaluator { UtcNow = () => now };
+        ev.Evaluate(Session(60, resetsAt1)).ToList(); // establish baseline
+
+        // API-driven reset: new resetsAt window + conditions that would normally trigger DepletionSoon
+        var resetsAt2 = resetsAt1.AddHours(5);
+        var resetTurn = ev.Evaluate(Session(60, resetsAt2), eta).ToList();
+
+        Assert.Contains(resetTurn, e => e.Kind == NotifyKind.Reset);
+        Assert.DoesNotContain(resetTurn, e => e.Kind == NotifyKind.DepletionSoon);
+
+        // Next call (new window, same conditions): DepletionSoon now fires
+        var nextTurn = ev.Evaluate(Session(60, resetsAt2), eta).ToList();
+        Assert.Contains(nextTurn, e => e.Kind == NotifyKind.DepletionSoon);
+    }
+
     // ── Cooldown tests ────────────────────────────────────────────────────────
 
     // Helper: builds a session UsageData with a resetsAt far in the future relative to the

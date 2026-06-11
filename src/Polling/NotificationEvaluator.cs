@@ -1,8 +1,8 @@
 namespace ClaudeUsageMonitor;
 
-public enum NotifyKind { HighUsage, LimitReached, Reset }
+public enum NotifyKind { HighUsage, LimitReached, Reset, DepletionSoon }
 
-public record NotifyEvent(NotifyKind Kind, string Quota, double Percent, string ResetText);
+public record NotifyEvent(NotifyKind Kind, string Quota, double Percent, string ResetText, TimeSpan? EtaToFull = null);
 
 public sealed class NotificationEvaluator
 {
@@ -24,11 +24,11 @@ public sealed class NotificationEvaluator
     private QuotaState _session = new();
     private QuotaState _weekly = new();
 
-    public IEnumerable<NotifyEvent> Evaluate(UsageData data)
+    public IEnumerable<NotifyEvent> Evaluate(UsageData data, TimeSpan? sessionEtaToFull = null)
     {
         foreach (var ev in _session.Evaluate(
             data.SessionPercent, data.SessionResetsAt, data.SessionResetText, "5h session",
-            HighUsageThreshold, HighUsageCooldownMinutes, UtcNow))
+            HighUsageThreshold, HighUsageCooldownMinutes, UtcNow, sessionEtaToFull))
         {
             yield return ev;
         }
@@ -50,6 +50,7 @@ public sealed class NotificationEvaluator
 
         private bool _warnedHigh;
         private bool _reached100;
+        private bool _warnedDepletion;
         private DateTime? _lastResetsAt;
         // Tracks the resetsAt window for which a local-timer Reset was already fired,
         // so API-driven detection doesn't double-fire for the same window.
@@ -59,9 +60,11 @@ public sealed class NotificationEvaluator
 
         public IEnumerable<NotifyEvent> Evaluate(
             double pct, DateTime? resetsAt, string resetText, string quotaLabel,
-            double highUsageThreshold, int cooldownMinutes, Func<DateTime> utcNow)
+            double highUsageThreshold, int cooldownMinutes, Func<DateTime> utcNow,
+            TimeSpan? etaToFull = null)
         {
             var now = utcNow();
+            bool didReset = false;
 
             // ── Local-timer reset: fire when the known resetsAt moment has passed ──
             // This fires before the next regular poll arrives, giving timely notification.
@@ -77,7 +80,9 @@ public sealed class NotificationEvaluator
                 _lastResetsAt = resetsAt.Value;  // advance baseline so API-driven path skips this window
                 _warnedHigh = false;
                 _reached100 = false;
+                _warnedDepletion = false;
                 _lastHighUsageAt = null;
+                didReset = true;
                 yield return new NotifyEvent(NotifyKind.Reset, quotaLabel, pct, resetText);
             }
 
@@ -94,7 +99,9 @@ public sealed class NotificationEvaluator
                     yield return new NotifyEvent(NotifyKind.Reset, quotaLabel, pct, resetText);
                     _warnedHigh = false;
                     _reached100 = false;
+                    _warnedDepletion = false;
                     _lastHighUsageAt = null;
+                    didReset = true;
                 }
                 if (delta > TimeSpan.Zero)
                     _lastResetsAt = resetsAt;   // never lower the baseline on jitter
@@ -137,6 +144,19 @@ public sealed class NotificationEvaluator
             {
                 _warnedHigh = false;
                 _lastHighUsageAt = null;
+            }
+
+            // ── DepletionSoon: ETA to full < remaining session time, pct >= 50 ──
+            // Skip if a reset fired this same turn — the flag was just cleared and the
+            // current usage snapshot reflects the old window, not the new one.
+            if (!didReset && etaToFull.HasValue && resetsAt.HasValue && pct >= 50.0 && !_warnedDepletion)
+            {
+                var remaining = resetsAt.Value - now;
+                if (etaToFull.Value < remaining)
+                {
+                    _warnedDepletion = true;
+                    yield return new NotifyEvent(NotifyKind.DepletionSoon, quotaLabel, pct, resetText, etaToFull);
+                }
             }
         }
     }
