@@ -4,9 +4,9 @@ C# WinForms (net10.0-windows) — Claude kullanim limitini Windows taskbar'i ust
 
 ## Komutlar
 
-- Build: `dotnet build -c Release` (sln: ClaudeUsageMonitor.sln)
-- Test: `dotnet test` (xunit, Windows-only target)
-- Calistir: `dotnet run --project src`
+- Build: `dotnet build ClaudeUsageMonitor.sln -c Release` — sln adi SART: kokte hem .sln hem .csproj var, ciplak `dotnet build` MSB1011 verir
+- Test: `dotnet test ClaudeUsageMonitor.sln` (xunit, Windows-only target)
+- Calistir: `dotnet run --project ClaudeUsageMonitor.csproj`
 
 ## Mimari (src/)
 
