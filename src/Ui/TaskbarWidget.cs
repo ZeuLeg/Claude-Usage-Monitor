@@ -466,6 +466,11 @@ internal sealed class TaskbarWidget : IDisposable
             g.Restore(state);
         }
 
+        // Tick marks at 25%, 50%, 75%
+        using var tickPen = new Pen(Color.FromArgb(90, 255, 255, 255), 1f);
+        foreach (var t in new[] { 0.25f, 0.5f, 0.75f })
+            g.DrawLine(tickPen, x + barW * t, y + 1, x + barW * t, y + BarH - 2);
+
         // Expected-pct notch: 1px wide, inset 2px from bar top/bottom — subtle "should be here" mark
         if (expectedPct > 0)
         {
