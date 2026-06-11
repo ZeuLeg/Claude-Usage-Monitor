@@ -75,6 +75,9 @@ internal sealed class TaskbarWidget : IDisposable
         _data = data;
         if (burnRate != null) _burnRate = burnRate;
         Redraw();
+        // If the hover card is open, refresh it with the new data immediately.
+        if (_nw.IsDwellFired)
+            OnHoverDwell();
     }
 
     /// <summary>
@@ -534,13 +537,15 @@ internal sealed class TaskbarWidget : IDisposable
         private int _targetAlpha = RestAlpha;
         private bool _mouseInside;
         private int  _dwellAccumMs; // accumulated ms mouse has been inside
+        private bool _dwellFired;   // true after dwell callback fires; reset when mouse leaves
 
         private readonly System.Windows.Forms.Timer _fadeTimer;
         private readonly Action _repaint;
         private readonly Action _onHoverDwell;
         private readonly Action _onMouseLeft;
 
-        public int CurrentAlpha => _alpha;
+        public int  CurrentAlpha  => _alpha;
+        public bool IsDwellFired  => _dwellFired;
 
         internal WidgetNativeWindow(Action repaint, Action onHoverDwell, Action onMouseLeft)
         {
@@ -631,8 +636,10 @@ internal sealed class TaskbarWidget : IDisposable
         {
             const int step = 64; // 255/64 ≈ 4 ticks × 40ms = ~160ms fade
 
+            int prevAlpha = _alpha;
             if (_alpha < _targetAlpha)      _alpha = Math.Min(_targetAlpha, _alpha + step);
             else if (_alpha > _targetAlpha) _alpha = Math.Max(_targetAlpha, _alpha - step);
+            bool alphaChanged = _alpha != prevAlpha;
 
             // Poll cursor to track mouse-inside state for both fade restore and hover-card dwell
             if (Handle != IntPtr.Zero)
@@ -654,18 +661,27 @@ internal sealed class TaskbarWidget : IDisposable
                         _mouseInside  = true;
                         _dwellAccumMs = _fadeTimer.Interval; // count this tick as first
                     }
-                    if (_dwellAccumMs >= HoverDwellMs)
+                    if (_dwellAccumMs >= HoverDwellMs && !_dwellFired)
+                    {
+                        _dwellFired = true;
                         _onHoverDwell();
+                    }
                 }
                 else if (_mouseInside)
                 {
                     _mouseInside  = false;
                     _dwellAccumMs = 0;
+                    _dwellFired   = false;
                     _onMouseLeft();
                 }
             }
 
-            _repaint();
+            // Only repaint when something visual has actually changed:
+            //   • alpha is still moving toward target (fade animation in progress)
+            //   • alpha changed this tick (first/last frame of a fade)
+            bool fadePending = _alpha != _targetAlpha;
+            if (alphaChanged || fadePending)
+                _repaint();
         }
 
         /// <summary>

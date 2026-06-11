@@ -9,20 +9,29 @@ internal static class NotificationsDialog
 
     public static void Show(Notifier notifier)
     {
+        // Collect GDI fonts created for child controls so they are disposed with the dialog.
+        // WinForms does not dispose a Control's Font when the control is disposed.
+        var fonts = new List<Font>();
+
         using var dlg = new Form
         {
             Text = "Notifications — Claude Usage Monitor",
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
             MaximizeBox = false, MinimizeBox = false,
             BackColor = Bg, ForeColor = Color.White,
-            Font = new Font("Segoe UI", 10f), TopMost = true,
+            TopMost = true,
             ShowInTaskbar = false,
             ClientSize = new Size(440, 368),
             StartPosition = FormStartPosition.CenterScreen,
         };
+        // dlg.Font is not tracked by Form.Dispose(), so add it to the explicit dispose list.
+        var dlgFont = new Font("Segoe UI", 10f);
+        dlg.Font = dlgFont;
+        fonts.Add(dlgFont);
+        dlg.Disposed += (_, _) => { foreach (var f in fonts) f.Dispose(); };
 
         // ── PHONE section ───────────────────────────────
-        dlg.Controls.Add(SectionHeader("PHONE (OPTIONAL)", 16));
+        dlg.Controls.Add(SectionHeader("PHONE (OPTIONAL)", 16, fonts));
 
         dlg.Controls.Add(FieldLabel("ntfy topic", 46));
         var ntfyTopicBox = Field(130, 43, 290, Settings.Current.NtfyTopic);
@@ -34,12 +43,12 @@ internal static class NotificationsDialog
 
         dlg.Controls.Add(HelpText(
             "Subscribe to this topic in the ntfy app to get phone alerts.",
-            28, 102, 400));
+            28, 102, 400, fonts));
 
         dlg.Controls.Add(Divider(130, 440));
 
         // ── NOTIFY ME WHEN section ──────────────────────
-        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 146));
+        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 146, fonts));
 
         var chkHighUsage = new CheckBox
         {
@@ -63,12 +72,14 @@ internal static class NotificationsDialog
         };
         dlg.Controls.Add(slider);
 
+        var pctLabelFont = new Font("Segoe UI", 10f, FontStyle.Bold);
+        fonts.Add(pctLabelFont);
         var pctLabel = new Label
         {
             Text = $"{slider.Value}%",
             Location = new Point(350, 183),
             ForeColor = Accent,
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font = pctLabelFont,
             AutoSize = true,
         };
         dlg.Controls.Add(pctLabel);
@@ -155,14 +166,12 @@ internal static class NotificationsDialog
         Size      = new Size(width, 1),
     };
 
-    private static Label SectionHeader(string text, int y) => new()
+    private static Label SectionHeader(string text, int y, List<Font> fonts)
     {
-        Text = text,
-        ForeColor = Accent,
-        Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-        Location = new Point(20, y),
-        AutoSize = true,
-    };
+        var font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
+        fonts.Add(font);
+        return new Label { Text = text, ForeColor = Accent, Font = font, Location = new Point(20, y), AutoSize = true };
+    }
 
     private static Label FieldLabel(string text, int y) => new()
     {
@@ -172,14 +181,12 @@ internal static class NotificationsDialog
         AutoSize = true,
     };
 
-    private static Label HelpText(string text, int x, int y, int width) => new()
+    private static Label HelpText(string text, int x, int y, int width, List<Font> fonts)
     {
-        Text = text,
-        ForeColor = Muted,
-        Font = new Font("Segoe UI", 8.5f),
-        Location = new Point(x, y),
-        Size = new Size(width, 32),
-    };
+        var font = new Font("Segoe UI", 8.5f);
+        fonts.Add(font);
+        return new Label { Text = text, ForeColor = Muted, Font = font, Location = new Point(x, y), Size = new Size(width, 32) };
+    }
 
     private static TextBox Field(int x, int y, int width, string value) => new()
     {

@@ -32,7 +32,7 @@ internal static class Logger
                 var info = new FileInfo(LogPath);
                 if (info.Exists && info.Length > MaxBytes)
                 {
-                    var bak = LogPath + ".bak";
+                    var bak = Path.Combine(LogDirectory, "log.old.txt");
                     File.Move(LogPath, bak, overwrite: true);
                 }
                 File.AppendAllText(LogPath,

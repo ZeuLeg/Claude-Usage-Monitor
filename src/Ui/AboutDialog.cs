@@ -15,16 +15,21 @@ internal static class AboutDialog
             FormBorderStyle = FormBorderStyle.FixedToolWindow,
             MaximizeBox = false, MinimizeBox = false,
             BackColor = Color.FromArgb(24, 24, 27), ForeColor = Color.White,
-            Font = new Font("Segoe UI", 10f), TopMost = true,
+            TopMost = true,
             ShowInTaskbar = false,
             ClientSize = new Size(400, 110),
             StartPosition = FormStartPosition.CenterScreen,
         };
+        // dlg.Font is not tracked by Form.Dispose(); dispose both fonts explicitly.
+        var dlgFont   = new Font("Segoe UI", 10f);
+        var titleFont = new Font("Segoe UI", 11f, FontStyle.Bold);
+        dlg.Font = dlgFont;
+        dlg.Disposed += (_, _) => { dlgFont.Dispose(); titleFont.Dispose(); };
 
         dlg.Controls.Add(new Label
         {
             Text = "Claude Usage Monitor",
-            Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+            Font = titleFont,
             ForeColor = Color.White,
             Location = new Point(20, 18),
             AutoSize = true,
