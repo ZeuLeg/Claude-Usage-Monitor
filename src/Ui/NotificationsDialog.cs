@@ -36,8 +36,10 @@ internal static class NotificationsDialog
             "Subscribe to this topic in the ntfy app to get phone alerts.",
             28, 102, 400));
 
+        dlg.Controls.Add(Divider(130, 440));
+
         // ── NOTIFY ME WHEN section ──────────────────────
-        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 150));
+        dlg.Controls.Add(SectionHeader("NOTIFY ME WHEN", 146));
 
         var chkHighUsage = new CheckBox
         {
@@ -108,6 +110,9 @@ internal static class NotificationsDialog
             try { await notifier.SendTestAsync(); }
             catch (Exception ex) { MessageBox.Show(ex.Message, "Test failed", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         };
+        using var tip = new ToolTip();
+        tip.SetToolTip(btnTest,
+            "Sends a test alert — always shows a Windows balloon;\nalso sends to phone via ntfy if a topic is configured.");
         dlg.Controls.Add(btnTest);
 
         var btnSave = FooterButton("Save", 250, 294, 80, Accent, Color.FromArgb(15, 15, 15));
@@ -130,6 +135,13 @@ internal static class NotificationsDialog
 
         dlg.ShowDialog();
     }
+
+    private static Label Divider(int y, int width) => new()
+    {
+        BackColor = Color.FromArgb(50, 50, 55),
+        Location  = new Point(20, y),
+        Size      = new Size(width, 1),
+    };
 
     private static Label SectionHeader(string text, int y) => new()
     {

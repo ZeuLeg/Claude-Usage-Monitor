@@ -201,9 +201,15 @@ internal sealed class TaskbarWidget : IDisposable
 
         if (data == null)
         {
-            using var fb = new SolidBrush(textClr);
+            using var loadFmt = new StringFormat
+            {
+                Alignment     = StringAlignment.Near,
+                LineAlignment = StringAlignment.Center,
+            };
+            using var fb = new SolidBrush(Color.FromArgb(120, textClr)); // dimmer than ERR
             using var ff = new Font("Segoe UI", 8f);
-            g.DrawString("...", ff, fb, new RectangleF(PadL, h / 2f - 7, w, 14));
+            g.DrawString("–",       ff, fb, new RectangleF(PadL,          h / 2f - 8, 16,      14), loadFmt);
+            g.DrawString("load…",   ff, fb, new RectangleF(PadL + 18,     h / 2f - 8, w - 22,  14), loadFmt);
             return;
         }
 

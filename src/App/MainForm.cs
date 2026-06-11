@@ -16,6 +16,7 @@ public sealed class MainForm : Form
     private TaskbarWidget? _taskbarWidget;
     private ToolStripMenuItem? _updateMenuItem;
     private string? _pendingUpdateTag;
+    private readonly System.Windows.Forms.Timer _singleClickTimer;
 
     // Registered once per process; non-zero on success (range 0xC000–0xFFFF)
     private static readonly uint _taskbarCreatedMsg =
@@ -39,6 +40,15 @@ public sealed class MainForm : Form
         // Create poller first so BuildMenu lambdas can capture a non-null reference.
         _poller = new UsagePoller(this);
 
+        // Defer single-click Refresh so a double-click can cancel it before it fires.
+        _singleClickTimer = new System.Windows.Forms.Timer
+            { Interval = SystemInformation.DoubleClickTime };
+        _singleClickTimer.Tick += (_, _) =>
+        {
+            _singleClickTimer.Stop();
+            FireAndForget(_poller.PollAsync);
+        };
+
         _trayIcon = new NotifyIcon
         {
             Text = "Claude Usage Monitor",
@@ -53,6 +63,24 @@ public sealed class MainForm : Form
         {
             HighUsageThreshold      = Settings.Current.HighUsageThreshold,
             HighUsageCooldownMinutes = Settings.Current.HighUsageCooldownMinutes,
+        };
+
+        // Left single click → Refresh (deferred); double click cancels the deferred
+        // Refresh and opens the Notifications dialog instead.
+        _trayIcon.MouseClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+                _singleClickTimer.Start();   // (re)start; fires after DoubleClickTime
+        };
+        _trayIcon.MouseDoubleClick += (_, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                _singleClickTimer.Stop();    // cancel pending Refresh
+                NotificationsDialog.Show(_notifier);
+                _evaluator.HighUsageThreshold      = Settings.Current.HighUsageThreshold;
+                _evaluator.HighUsageCooldownMinutes = Settings.Current.HighUsageCooldownMinutes;
+            }
         };
 
         _poller.Updated += data =>
@@ -338,6 +366,7 @@ public sealed class MainForm : Form
         if (disposing)
         {
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            _singleClickTimer.Dispose();
             _poller.Dispose();
             _taskbarWidget?.Dispose();
             _tray.Dispose();

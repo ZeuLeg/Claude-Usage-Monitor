@@ -53,7 +53,10 @@ internal class Settings
                 return JsonSerializer.Deserialize<Settings>(json, JsonOptions) ?? new Settings();
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Settings] Failed to load {SettingsPath}: {ex.Message}");
+        }
         return new Settings();
     }
 
